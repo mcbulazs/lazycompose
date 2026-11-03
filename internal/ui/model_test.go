@@ -320,3 +320,49 @@ func TestColumnsFitContent(t *testing.T) {
 		t.Errorf("STATE should not shrink, got %d", cols[1].Width)
 	}
 }
+
+func click(x, y int) tea.MouseMsg {
+	return tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+}
+
+func TestMouse(t *testing.T) {
+	m := newTestModel(t)
+	// screen: header on row 0, pane border on 1, title on 2, list from 3:
+	// plex, games/, mc, web/, blog, shop
+	screen := strings.Split(m.View(), "\n")
+	if !strings.Contains(screen[5], "mc") || !strings.Contains(screen[4], "games/") {
+		t.Fatalf("layout changed, rows 4-5 are %q and %q", screen[4], screen[5])
+	}
+	m = send(m, click(5, 5))
+	if selected(m) != "games/mc" {
+		t.Errorf("click selected %q, want games/mc", selected(m))
+	}
+	m = send(m, click(5, 4)) // a group header does nothing
+	if selected(m) != "games/mc" {
+		t.Errorf("clicking a header changed the selection to %q", selected(m))
+	}
+
+	m = send(m, tea.MouseMsg{X: 5, Y: 6, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	if selected(m) != "web/blog" {
+		t.Errorf("wheel selected %q, want web/blog", selected(m))
+	}
+
+	m = send(m,
+		servicesMsg{services: map[string][]string{"/srv/web/blog": {"db", "web"}}},
+		psMsg{dir: "/srv/web/blog"},
+	)
+	// services pane: border 1, title 2, column header 3, rows from 4
+	screen = strings.Split(m.View(), "\n")
+	if !strings.Contains(screen[5], " web ") {
+		t.Fatalf("layout changed, row 5 is %q", screen[5])
+	}
+	m = send(m, click(m.leftWidth()+5, 5))
+	if m.focus != focusServices || m.selectedService() != "web" {
+		t.Errorf("focus %v, service %q; want services pane and web", m.focus, m.selectedService())
+	}
+
+	m = send(m, click(m.leftWidth()+5, m.servicesHeight()+3))
+	if m.focus != focusLogs {
+		t.Errorf("click below the services pane should focus logs, got %v", m.focus)
+	}
+}

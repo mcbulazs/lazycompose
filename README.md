@@ -94,6 +94,7 @@ colors:
 | `roots` | your home folder | Folders to scan for compose files. |
 | `max_depth` | `0` | How many folders deep to look. `0` means no limit. |
 | `editor` | `vim` | Editor for `e`, e.g. `nvim` or `code --wait`. Set it to `""` to use `$VISUAL`, then `$EDITOR`, then nvim or vi. |
+| `mouse` | `true` | Scroll and click with the mouse. Hold shift to select text while it is on. |
 | `theme` | `terminal` | A built-in theme or one of your own. |
 | `themes` | | Your own themes, see below. |
 | `colors` | | Change single colours of the active theme. |
@@ -169,6 +170,9 @@ Flags override the config:
 | `R` | Refresh and rescan folders |
 | `?` | Show all keys |
 | `q` | Quit |
+
+The mouse works too: the wheel scrolls the pane under the pointer and a click
+selects an environment or service.
 
 `u`, `r`, `p` and `l` act on the whole environment, or on the selected
 service when the services pane is focused.

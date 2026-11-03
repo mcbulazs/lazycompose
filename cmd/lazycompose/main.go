@@ -20,6 +20,7 @@ type config struct {
 	Roots    []string                     `yaml:"roots"`
 	MaxDepth int                          `yaml:"max_depth"`
 	Editor   *string                      `yaml:"editor"`
+	Mouse    *bool                        `yaml:"mouse"`
 	Theme    string                       `yaml:"theme"`
 	Themes   map[string]map[string]string `yaml:"themes"`
 	Colors   map[string]string            `yaml:"colors"`
@@ -68,6 +69,10 @@ max_depth: 0
 # Set it to "" to use $VISUAL, then $EDITOR, then nvim or vi.
 editor: vim
 
+# Scroll and click with the mouse. While it is on, hold shift to select
+# text in most terminals.
+mouse: true
+
 # Colour theme. Built in: terminal, onedark, tokyonight, catppuccin, gruvbox
 # and nord. "terminal" uses your terminal's own colours; the others use fixed
 # colours and paint the terminal background while lazycompose runs.
@@ -102,8 +107,8 @@ theme: terminal
 `
 
 func loadConfig(path string) (config, error) {
-	editor := "vim"
-	cfg := config{Roots: []string{"~"}, Editor: &editor, Theme: ui.DefaultTheme}
+	editor, mouse := "vim", true
+	cfg := config{Roots: []string{"~"}, Editor: &editor, Mouse: &mouse, Theme: ui.DefaultTheme}
 	if path == "" {
 		return cfg, nil
 	}
@@ -133,6 +138,9 @@ func loadConfig(path string) (config, error) {
 	// a missing key keeps vim, an empty value means use $VISUAL / $EDITOR
 	if file.Editor != nil {
 		cfg.Editor = file.Editor
+	}
+	if file.Mouse != nil {
+		cfg.Mouse = file.Mouse
 	}
 	cfg.Themes = file.Themes
 	cfg.Colors = file.Colors
@@ -226,7 +234,11 @@ func main() {
 	if th.Background != "" {
 		fmt.Print("\x1b]11;" + th.Background + "\x07")
 	}
-	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if *cfg.Mouse {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	_, err = tea.NewProgram(m, opts...).Run()
 	if th.Background != "" {
 		fmt.Print("\x1b]111\x07")
 	}

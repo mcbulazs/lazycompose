@@ -31,6 +31,7 @@ type envList struct {
 	cursor  int   // index into visible
 	offset  int   // first rendered line
 	query   string
+	only    map[string]bool // when set, only these env dirs are shown
 }
 
 func newEnvList(envs []discover.Env, multiRoot bool) envList {
@@ -64,6 +65,9 @@ func (l *envList) setFilter(q string) {
 	q = strings.ToLower(q)
 	l.visible = l.visible[:0]
 	for i, it := range l.items {
+		if l.only != nil && !l.only[it.env.Dir] {
+			continue
+		}
 		if q == "" || strings.Contains(strings.ToLower(it.group+"/"+it.env.Name()), q) {
 			l.visible = append(l.visible, i)
 		}
@@ -138,7 +142,7 @@ func (l *envList) scroll(h int) {
 	l.offset = max(0, min(l.offset, max(0, len(lines)-h)))
 }
 
-type countFunc func(discover.Env) (running, total int)
+type countFunc func(discover.Env) (running, total, problems int)
 
 func statusOf(running, total int) envStatus {
 	switch {
@@ -151,7 +155,11 @@ func statusOf(running, total int) envStatus {
 	}
 }
 
-func dot(s envStatus) string {
+func dot(s envStatus, problems int) string {
+	if problems > 0 {
+		symbol := map[envStatus]string{statusUp: "●", statusPartial: "◐", statusDown: "○"}[s]
+		return redStyle.Render(symbol)
+	}
 	switch s {
 	case statusUp:
 		return greenStyle.Render("●")
@@ -182,7 +190,7 @@ func (l envList) view(w, h int, focused bool, counts countFunc) string {
 			continue
 		}
 		it := l.items[l.visible[ln.pos]]
-		running, total := counts(it.env)
+		running, total, problems := counts(it.env)
 
 		indent := ""
 		if it.group != "" {
@@ -198,7 +206,7 @@ func (l envList) view(w, h int, focused bool, counts countFunc) string {
 			if !focused {
 				st = lipgloss.NewStyle().Foreground(colText).Bold(true)
 			}
-			row := indent + dot(statusOf(running, total)) + " " + st.Render(name+gap+count)
+			row := indent + dot(statusOf(running, total), problems) + " " + st.Render(name+gap+count)
 			b.WriteString(row)
 			continue
 		}
@@ -206,7 +214,10 @@ func (l envList) view(w, h int, focused bool, counts countFunc) string {
 		if running > 0 {
 			countStyle = textStyle
 		}
-		b.WriteString(indent + dot(statusOf(running, total)) + " " + textStyle.Render(name) + gap + countStyle.Render(count))
+		if problems > 0 {
+			countStyle = redStyle
+		}
+		b.WriteString(indent + dot(statusOf(running, total), problems) + " " + textStyle.Render(name) + gap + countStyle.Render(count))
 	}
 	return b.String()
 }

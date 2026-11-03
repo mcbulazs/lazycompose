@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -103,6 +105,33 @@ type Container struct {
 
 func (c Container) Running() bool { return c.State == "running" }
 
+// Problem reports an unhealthy, crash looping or crashed container.
+func (c Container) Problem() bool { return problem(c.State, c.Health, c.ExitCode) }
+
+// problem is true for unhealthy, restarting or dead containers, and for
+// ones that exited with an error. 137 and 143 are what a normal stop or
+// kill leaves behind, so they do not count.
+func problem(state, health string, exitCode int) bool {
+	switch {
+	case health == "unhealthy", state == "restarting", state == "dead":
+		return true
+	case state == "exited":
+		return exitCode != 0 && exitCode != 137 && exitCode != 143
+	}
+	return false
+}
+
+var exitedRe = regexp.MustCompile(`^Exited \((-?\d+)\)`)
+
+// exitCodeFromStatus reads the code from a status like "Exited (2) 1 hour ago".
+func exitCodeFromStatus(status string) int {
+	if m := exitedRe.FindStringSubmatch(status); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return n
+	}
+	return 0
+}
+
 // Ports formats published ports, merging the IPv4 and IPv6 bindings.
 func (c Container) Ports() string {
 	seen := map[string]bool{}
@@ -173,6 +202,7 @@ type DirState struct {
 	Running  int
 	Total    int
 	Services map[string]bool // services with a running container
+	Problems int             // unhealthy, crash looping or crashed containers
 }
 
 // StateByDir reads every compose-managed container on the host with a single
@@ -202,6 +232,8 @@ func ParseDockerPS(data []byte) (map[string]*DirState, error) {
 	for dec.More() {
 		var row struct {
 			State  string `json:"State"`
+			Status string `json:"Status"`
+			Health string `json:"HealthStatus"`
 			Labels string `json:"Labels"`
 		}
 		if err := dec.Decode(&row); err != nil {
@@ -222,6 +254,9 @@ func ParseDockerPS(data []byte) (map[string]*DirState, error) {
 		if row.State == "running" {
 			st.Running++
 			st.Services[labels[labelService]] = true
+		}
+		if problem(row.State, row.Health, exitCodeFromStatus(row.Status)) {
+			st.Problems++
 		}
 	}
 	return res, nil

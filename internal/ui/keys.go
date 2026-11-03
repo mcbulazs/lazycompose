@@ -6,7 +6,7 @@ type keyMap struct {
 	Up, Down, Tab, Filter      key.Binding
 	Edit, Start, Stop, Restart key.Binding
 	Pull, Logs, Shell, Refresh key.Binding
-	UpdateAll                  key.Binding
+	UpdateAll, Problems        key.Binding
 	Help, Quit                 key.Binding
 }
 
@@ -23,6 +23,7 @@ var keys = keyMap{
 	Logs:      key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "logs")),
 	Shell:     key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "shell")),
 	UpdateAll: key.NewBinding(key.WithKeys("U"), key.WithHelp("U", "update all")),
+	Problems:  key.NewBinding(key.WithKeys("!"), key.WithHelp("!", "problems only")),
 	Refresh:   key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "refresh")),
 	Help:      key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:      key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
@@ -34,7 +35,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Tab, k.Filter},
+		{k.Up, k.Down, k.Tab, k.Filter, k.Problems},
 		{k.Edit, k.Start, k.Stop, k.Restart},
 		{k.Pull, k.UpdateAll, k.Logs, k.Shell},
 		{k.Refresh, k.Help, k.Quit},

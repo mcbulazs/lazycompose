@@ -76,6 +76,7 @@ type Model struct {
 
 	width, height int
 	scanning      bool
+	problemsOnly  bool
 	loadingStates bool
 	loadingPS     bool
 }
@@ -173,8 +174,17 @@ func (m *Model) onSelect() tea.Cmd {
 	return loadPS(e)
 }
 
-// running and total service counts for an environment
-func (m Model) counts(e discover.Env) (int, int) {
+// counts returns running services, total services and problem containers.
+func (m Model) counts(e discover.Env) (int, int, int) {
+	running, total := m.serviceCounts(e)
+	problems := 0
+	if st := m.states[e.Dir]; st != nil {
+		problems = st.Problems
+	}
+	return running, total, problems
+}
+
+func (m Model) serviceCounts(e discover.Env) (int, int) {
 	st := m.states[e.Dir]
 	names, known := m.services[e.Dir]
 	if !known {
@@ -309,6 +319,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.states = msg.states
+		if m.problemsOnly {
+			m.applyProblemFilter()
+			return m, m.onSelect()
+		}
 		return m, nil
 
 	case servicesMsg:
@@ -349,6 +363,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.list.setFilter(q)
+		if m.problemsOnly {
+			m.applyProblemFilter()
+		}
 		m.setStatus(fmt.Sprintf("found %d environments", len(msg.envs)), false)
 		return m, tea.Batch(loadServices(msg.envs), loadStates(), m.onSelect())
 
@@ -571,10 +588,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.setStatus("stopping after "+m.updating.queue[m.updating.next].Rel, false)
 		return m, nil
 
+	case key.Matches(msg, keys.Problems):
+		m.problemsOnly = !m.problemsOnly
+		if m.problemsOnly {
+			m.applyProblemFilter()
+		} else {
+			m.list.only = nil
+			m.list.setFilter(m.list.query)
+		}
+		return m, m.onSelect()
+
 	case key.Matches(msg, keys.UpdateAll):
 		return m, m.startUpdateAll()
 
 	case msg.String() == "esc":
+		if m.problemsOnly {
+			m.problemsOnly = false
+			m.list.only = nil
+			m.list.setFilter(m.list.query)
+			return m, m.onSelect()
+		}
 		if m.list.query != "" {
 			m.filter.SetValue("")
 			m.list.setFilter("")
@@ -669,6 +702,17 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) applyProblemFilter() {
+	only := map[string]bool{}
+	for dir, st := range m.states {
+		if st.Problems > 0 {
+			only[dir] = true
+		}
+	}
+	m.list.only = only
+	m.list.setFilter(m.list.query)
+}
+
 func (m Model) serviceRunning(service string) bool {
 	for _, c := range m.containers {
 		if c.Service == service && c.Running() {
@@ -720,6 +764,12 @@ func (m *Model) setTableStyles() {
 }
 
 func stateText(c compose.Container) string {
+	if c.Problem() {
+		if c.State == "exited" {
+			return fmt.Sprintf("✗ exited (%d)", c.ExitCode)
+		}
+		return "✗ " + c.State
+	}
 	switch c.State {
 	case "running":
 		return "● running"
@@ -838,6 +888,9 @@ func (m Model) View() string {
 
 	listH := m.listHeight()
 	envTitle := "Environments"
+	if m.problemsOnly {
+		envTitle += " · problems"
+	}
 	var listBody string
 	if m.filtering || m.list.query != "" {
 		f := m.filter.View()
@@ -878,9 +931,13 @@ func (m Model) View() string {
 }
 
 func (m Model) headerView() string {
-	var up, partial, down int
+	var up, partial, down, problems int
 	for _, it := range m.list.items {
-		switch statusOf(m.counts(it.env)) {
+		running, total, p := m.counts(it.env)
+		if p > 0 {
+			problems++
+		}
+		switch statusOf(running, total) {
 		case statusUp:
 			up++
 		case statusPartial:
@@ -892,6 +949,9 @@ func (m Model) headerView() string {
 	right := greenStyle.Render(fmt.Sprintf("● %d up", up)) + "  " +
 		yellowStyle.Render(fmt.Sprintf("◐ %d partial", partial)) + "  " +
 		dimStyle.Render(fmt.Sprintf("○ %d down", down))
+	if problems > 0 {
+		right += "  " + redStyle.Render(fmt.Sprintf("✗ %d with problems", problems))
+	}
 	left := accentStyle.Render("lazycompose") + "  " + textStyle.Render(m.opts.Hostname) + "  "
 	room := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 4
 	roots := strings.Join(m.opts.Roots, ", ")

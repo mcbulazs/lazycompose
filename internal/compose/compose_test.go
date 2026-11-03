@@ -141,3 +141,48 @@ func TestShort(t *testing.T) {
 		}
 	}
 }
+
+func TestParseDockerPSProblems(t *testing.T) {
+	m, err := ParseDockerPS(fixture(t, "docker_ps.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{
+		"/srv/stacks/sick":     1, // unhealthy
+		"/srv/stacks/loop":     1, // restarting
+		"/srv/stacks/crashed":  1, // worker exited with 2
+		"/srv/stacks/stopped":  0, // killed by a stop, not a crash
+		"/srv/stacks/web/blog": 0, // worker exited with 137
+		"/srv/stacks/jellyfin": 0,
+	}
+	for dir, n := range want {
+		st := m[dir]
+		if st == nil {
+			t.Errorf("%s missing", dir)
+			continue
+		}
+		if st.Problems != n {
+			t.Errorf("%s: %d problems, want %d", dir, st.Problems, n)
+		}
+	}
+}
+
+func TestContainerProblem(t *testing.T) {
+	tests := []struct {
+		c    Container
+		want bool
+	}{
+		{Container{State: "running", Health: "healthy"}, false},
+		{Container{State: "running", Health: "unhealthy"}, true},
+		{Container{State: "restarting"}, true},
+		{Container{State: "exited", ExitCode: 0}, false},
+		{Container{State: "exited", ExitCode: 1}, true},
+		{Container{State: "exited", ExitCode: 137}, false},
+		{Container{State: "exited", ExitCode: 143}, false},
+	}
+	for _, tt := range tests {
+		if got := tt.c.Problem(); got != tt.want {
+			t.Errorf("%+v: got %v, want %v", tt.c, got, tt.want)
+		}
+	}
+}

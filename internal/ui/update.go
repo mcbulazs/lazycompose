@@ -23,7 +23,7 @@ func (m *Model) startUpdateAll() tea.Cmd {
 	}
 	var queue []discover.Env
 	for _, it := range m.list.items {
-		if running, _ := m.counts(it.env); running > 0 {
+		if running, _, _ := m.counts(it.env); running > 0 {
 			queue = append(queue, it.env)
 		}
 	}

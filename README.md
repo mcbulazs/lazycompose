@@ -25,6 +25,11 @@ Every folder with a `compose.yaml` (or `compose.yml`, `docker-compose.yaml`,
 Environments are grouped by their parent folder. The status dot shows
 `●` all services running, `◐` some running, `○` down.
 
+Environments with a problem are shown in red, and the header counts them. A
+problem is a container that is unhealthy, restarting in a loop, or exited with
+an error. Exit codes 137 and 143 are left by a normal stop, so a stack you
+stopped yourself does not count.
+
 lazycompose runs on the host, not in a container, since it calls
 `docker compose` and opens your editor.
 
@@ -139,6 +144,7 @@ Flags override the config:
 | `tab` / `shift+tab` | Switch pane (environments, services, logs) |
 | `j` `k` / arrows | Move, or scroll the log pane |
 | `/` | Filter environments, `enter` to keep, `esc` to clear |
+| `!` | Show only environments with problems, `esc` to show all |
 | `e` | Edit the compose file (see `editor` in the config) |
 | `u` | `docker compose up -d` |
 | `d` | `docker compose down` (asks first) |

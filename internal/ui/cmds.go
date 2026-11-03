@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -49,7 +50,13 @@ type (
 		env discover.Env
 		err error
 	}
-	shellMsg struct{ err error }
+	shellMsg      struct{ err error }
+	shellFoundMsg struct {
+		env     discover.Env
+		service string
+		shell   string
+		err     error
+	}
 )
 
 func project(e discover.Env) compose.Project {
@@ -160,8 +167,30 @@ func openEditor(e discover.Env) tea.Cmd {
 	})
 }
 
-func openShell(e discover.Env, service string) tea.Cmd {
-	cmd := project(e).Command(context.Background(), "exec", service, "sh")
+// shells are tried in this order
+var shells = []string{"bash", "sh"}
+
+// findShell checks which shell the container has before handing over the
+// terminal, so a missing shell gives a message instead of a broken screen.
+func findShell(e discover.Env, service string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var lastErr error
+		for _, sh := range shells {
+			_, err := project(e).Run(ctx, "exec", "-T", service, sh, "-c", "exit 0")
+			if err == nil {
+				return shellFoundMsg{env: e, service: service, shell: sh}
+			}
+			lastErr = err
+		}
+		return shellFoundMsg{err: fmt.Errorf("no shell in %s (tried %s): %s",
+			service, strings.Join(shells, ", "), firstLine(lastErr.Error()))}
+	}
+}
+
+func openShell(e discover.Env, service, shell string) tea.Cmd {
+	cmd := project(e).Command(context.Background(), "exec", service, shell)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return shellMsg{err: err} })
 }
 

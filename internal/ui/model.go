@@ -73,6 +73,7 @@ type Model struct {
 	showHelp bool
 
 	width, height int
+	scanning      bool
 	loadingStates bool
 	loadingPS     bool
 }
@@ -116,12 +117,20 @@ func New(opts Options) Model {
 		m.current = e.Dir
 		m.loadingPS = true
 	}
+	if opts.Envs == nil && opts.Find != nil {
+		m.scanning = true
+		m.busy = 1
+		m.setStatus("scanning "+strings.Join(opts.Roots, ", "), false)
+	}
 	m.setTableStyles()
 	m.setLogPlaceholder()
 	return m
 }
 
 func (m Model) Init() tea.Cmd {
+	if m.scanning {
+		return tea.Batch(m.spin.Tick, rediscover(m.opts.Find), loadStates(), tick())
+	}
 	cmds := []tea.Cmd{loadStates(), loadServices(m.opts.Envs), tick()}
 	if c := m.selectCurrent(); c != nil {
 		cmds = append(cmds, c)
@@ -321,6 +330,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case envsMsg:
 		m.busy = max(0, m.busy-1)
+		m.scanning = false
 		if msg.err != nil {
 			m.setStatus("discover: "+msg.err.Error(), true)
 			return m, nil
@@ -392,6 +402,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			},
 		}
 		return m, loadServices([]discover.Env{e})
+
+	case shellFoundMsg:
+		m.busy = max(0, m.busy-1)
+		if msg.err != nil {
+			m.setStatus(msg.err.Error(), true)
+			return m, nil
+		}
+		m.setStatus("", false)
+		return m, openShell(msg.env, msg.service, msg.shell)
 
 	case shellMsg:
 		if msg.err != nil {
@@ -628,9 +647,22 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setStatus("no service selected", true)
 			return m, nil
 		}
-		return m, openShell(e, s)
+		if !m.serviceRunning(s) {
+			m.setStatus(s+" is not running", true)
+			return m, nil
+		}
+		return m, tea.Batch(m.startBusy("opening shell in "+s), findShell(e, s))
 	}
 	return m, nil
+}
+
+func (m Model) serviceRunning(service string) bool {
+	for _, c := range m.containers {
+		if c.Service == service && c.Running() {
+			return true
+		}
+	}
+	return false
 }
 
 func firstLine(s string) string {
@@ -727,8 +759,9 @@ func (m *Model) refreshTable() {
 		}
 	}
 	m.table.SetRows(rows)
-	if m.table.Cursor() >= len(rows) {
-		m.table.SetCursor(max(0, len(rows)-1))
+	// the table leaves its cursor at -1 when it was set while empty
+	if c := m.table.Cursor(); c < 0 || c >= len(rows) {
+		m.table.SetCursor(max(0, min(c, len(rows)-1)))
 	}
 	m.layout()
 }
@@ -800,7 +833,11 @@ func (m Model) View() string {
 		}
 		listBody = f + "\n"
 	}
-	listBody += m.list.view(lw-4, listH, m.focus == focusEnvs, m.counts)
+	if m.scanning && len(m.list.items) == 0 {
+		listBody += dimStyle.Render("scanning…")
+	} else {
+		listBody += m.list.view(lw-4, listH, m.focus == focusEnvs, m.counts)
+	}
 	left := pane(envTitle, listBody, lw, body, m.focus == focusEnvs)
 
 	svcTitle := "Services"

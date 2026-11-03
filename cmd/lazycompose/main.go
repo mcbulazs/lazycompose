@@ -190,20 +190,22 @@ func main() {
 	}
 
 	find := func() ([]discover.Env, error) { return discover.Find(cfg.Roots, cfg.MaxDepth) }
-	envs, err := find()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "lazycompose:", err)
-		if errors.Is(err, fs.ErrNotExist) && *configPath != "" {
-			fmt.Fprintf(os.Stderr, "set your folders in %s or pass -root\n", *configPath)
+	// check the roots up front so a typo gets a clear message; the scan
+	// itself runs in the background once the UI is up
+	for _, r := range cfg.Roots {
+		if _, err := os.Stat(r); err != nil {
+			fmt.Fprintln(os.Stderr, "lazycompose:", err)
+			if errors.Is(err, fs.ErrNotExist) && *configPath != "" {
+				fmt.Fprintf(os.Stderr, "set your folders in %s or pass -root\n", *configPath)
+			}
+			os.Exit(1)
 		}
-		os.Exit(1)
 	}
 
 	host, _ := os.Hostname()
 	m := ui.New(ui.Options{
 		Hostname: host,
 		Roots:    cfg.Roots,
-		Envs:     envs,
 		Find:     find,
 		Theme:    th,
 	})

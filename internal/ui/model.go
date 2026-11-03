@@ -58,11 +58,16 @@ type Model struct {
 	rowService []string
 	table      table.Model
 
-	logs     viewport.Model
-	logLines []string
-	logTitle string
-	stream   *logStream
-	streamID int
+	logs viewport.Model
+	// lineStart is the first wrapped row of each log line
+	lineStart   []int
+	search      logSearch
+	searching   bool
+	searchInput textinput.Model
+	logLines    []string
+	logTitle    string
+	stream      *logStream
+	streamID    int
 
 	spin      spinner.Model
 	busy      int
@@ -99,6 +104,12 @@ func New(opts Options) Model {
 	fi.TextStyle = textStyle
 	fi.Cursor.Style = textStyle
 
+	si := textinput.New()
+	si.Prompt = "/"
+	si.PromptStyle = accentStyle
+	si.TextStyle = textStyle
+	si.Placeholder = "search logs"
+
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colFocus)
@@ -114,15 +125,16 @@ func New(opts Options) Model {
 	t := table.New(table.WithColumns(columns(80, nil)))
 
 	m := Model{
-		opts:     opts,
-		list:     newEnvList(opts.Envs, len(opts.Roots) > 1),
-		filter:   fi,
-		states:   map[string]*compose.DirState{},
-		services: map[string][]string{},
-		table:    t,
-		logs:     viewport.New(0, 0),
-		spin:     sp,
-		help:     h,
+		opts:        opts,
+		list:        newEnvList(opts.Envs, len(opts.Roots) > 1),
+		filter:      fi,
+		searchInput: si,
+		states:      map[string]*compose.DirState{},
+		services:    map[string][]string{},
+		table:       t,
+		logs:        viewport.New(0, 0),
+		spin:        sp,
+		help:        h,
 	}
 	if e, ok := m.list.selected(); ok {
 		m.current = e.Dir
@@ -241,19 +253,37 @@ func (m *Model) appendLog(lines ...string) {
 }
 
 func (m *Model) renderLogs() {
+	m.findMatches()
+	isMatch := map[int]bool{}
+	for _, i := range m.search.matches {
+		isMatch[i] = true
+	}
+	current := -1
+	if len(m.search.matches) > 0 {
+		current = m.search.matches[m.search.current]
+	}
+
 	w := m.logs.Width
 	out := make([]string, len(m.logLines))
+	m.lineStart = m.lineStart[:0]
+	row := 0
 	for i, l := range m.logLines {
 		l = strings.ReplaceAll(l, "\t", "    ")
+		if isMatch[i] {
+			l = highlight(l, m.search.query, i == current)
+		}
 		if w > 0 {
 			l = ansi.Wrap(l, w, "")
 		}
 		out[i] = l
+		m.lineStart = append(m.lineStart, row)
+		row += strings.Count(l, "\n") + 1
 	}
 	m.logs.SetContent(strings.Join(out, "\n"))
 }
 
 func (m *Model) setLogPlaceholder() {
+	m.search = logSearch{}
 	m.logTitle = "Logs"
 	m.logLines = nil
 	m.logs.SetContent(dimStyle.Render("press l to follow logs"))
@@ -567,6 +597,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.searching {
+		return m.handleSearchKey(msg)
+	}
+
 	if m.filtering {
 		switch msg.String() {
 		case "enter":
@@ -651,6 +685,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.logs.GotoBottom()
 			}
 		}
+		return m, nil
+
+	case key.Matches(msg, keys.Filter) && m.focus == focusLogs:
+		return m, m.startLogSearch()
+
+	case m.focus == focusLogs && m.search.active() && (msg.String() == "n" || msg.String() == "N"):
+		if msg.String() == "n" {
+			m.moveMatch(-1)
+		} else {
+			m.moveMatch(1)
+		}
+		return m, nil
+
+	case msg.String() == "esc" && m.focus == focusLogs && m.search.active():
+		m.clearSearch()
 		return m, nil
 
 	case key.Matches(msg, keys.Filter):
@@ -755,6 +804,7 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stopLogs()
 		m.streamID++
 		m.logLines = nil
+		m.search = logSearch{}
 		m.logs.SetContent("")
 		m.logTitle = "Logs · " + e.Rel
 		if svc != "" {
@@ -1086,6 +1136,13 @@ func (m Model) View() string {
 	if m.stream != nil {
 		logTitle += " (following)"
 	}
+	if s := m.search; s.active() {
+		if len(s.matches) > 0 {
+			logTitle += fmt.Sprintf(" · /%s %d/%d", s.query, s.current+1, len(s.matches))
+		} else {
+			logTitle += fmt.Sprintf(" · /%s no matches", s.query)
+		}
+	}
 	logs := pane(logTitle, m.logs.View(), rw, body-sh, m.focus == focusLogs)
 
 	right := lipgloss.JoinVertical(lipgloss.Left, services, logs)
@@ -1133,6 +1190,8 @@ func (m Model) headerView() string {
 func (m Model) statusView() string {
 	var s string
 	switch {
+	case m.searching:
+		s = m.searchInput.View()
 	case m.confirm != nil:
 		s = confirmStyle.Render(m.confirm.prompt)
 	case m.busy > 0:

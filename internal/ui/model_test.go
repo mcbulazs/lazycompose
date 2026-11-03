@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 )
@@ -428,5 +429,59 @@ func TestStatsInTable(t *testing.T) {
 	m = send(m, press("down")...)
 	if m.stats != nil {
 		t.Errorf("stats should be cleared on env switch")
+	}
+}
+
+func TestLogSearch(t *testing.T) {
+	m := newTestModel(t)
+	m.appendLog(
+		"web-1 | GET / 200",
+		"web-1 | ERROR database timeout",
+		"db-1  | checkpoint complete",
+		"web-1 | error: retrying",
+	)
+	m = send(m, press("tab", "tab")...) // focus logs
+	if m.focus != focusLogs {
+		t.Fatalf("focus %v", m.focus)
+	}
+
+	m = send(m, press("/", "error", "enter")...)
+	if m.filtering {
+		t.Fatal("/ in the log pane should search, not filter environments")
+	}
+	s := m.search
+	if len(s.matches) != 2 || s.matches[0] != 1 || s.matches[1] != 3 {
+		t.Fatalf("matches %v, want [1 3]", s.matches)
+	}
+	if s.current != 1 || m.status != "match 2/2" {
+		t.Errorf("should start at the newest match: current %d, status %q", s.current, m.status)
+	}
+	if !strings.Contains(m.View(), "/error 2/2") {
+		t.Errorf("title should show the search")
+	}
+
+	m = send(m, press("n")...)
+	if m.search.current != 0 || m.status != "match 1/2" {
+		t.Errorf("n should go to the older match: %d %q", m.search.current, m.status)
+	}
+	m = send(m, press("n")...)
+	if m.search.current != 1 {
+		t.Errorf("n should wrap around, got %d", m.search.current)
+	}
+	m = send(m, press("N")...)
+	if m.search.current != 0 {
+		t.Errorf("N should go newer (wrapping), got %d", m.search.current)
+	}
+
+	m = send(m, press("esc")...)
+	if m.search.active() {
+		t.Errorf("esc should clear the search")
+	}
+}
+
+func TestHighlight(t *testing.T) {
+	got := ansi.Strip(highlight("web-1 | Error and ERROR", "error", false))
+	if got != "web-1 | Error and ERROR" {
+		t.Errorf("highlight changed the text: %q", got)
 	}
 }

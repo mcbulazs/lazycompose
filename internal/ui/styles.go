@@ -154,6 +154,7 @@ func (t *Theme) set(key, value string) error {
 
 var (
 	colBorder, colFocus, colText, colDim lipgloss.TerminalColor
+	colYellowBg, colMatchFg              lipgloss.TerminalColor
 
 	textStyle, dimStyle, greenStyle, yellowStyle, redStyle, accentStyle lipgloss.Style
 	titleStyle, titleDim, selectedRow, groupStyle, confirmStyle         lipgloss.Style
@@ -163,6 +164,7 @@ func init() { applyTheme(Themes[DefaultTheme]) }
 
 func applyTheme(t Theme) {
 	colBorder, colFocus, colText, colDim = t.Border, t.Focus, t.Text, t.Dim
+	colYellowBg, colMatchFg = t.Yellow, lipgloss.Color("0")
 
 	textStyle = lipgloss.NewStyle().Foreground(t.Text)
 	dimStyle = lipgloss.NewStyle().Foreground(t.Dim)

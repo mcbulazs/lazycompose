@@ -172,6 +172,8 @@ Flags override the config:
 | `s` | Stop the selected service, or start it if it is not running |
 | `x` | Open a shell in the selected service (bash if it has it, otherwise sh) |
 | `o` | Open your shell (`$SHELL`) in the environment's folder; `exit` to come back |
+| `/` in the log pane | Search the logs; `n` older match, `N` newer match, `esc` clears |
+| `G` / `g` | Jump to the bottom / top of the log pane |
 | `esc` | Stop following logs |
 | `R` | Refresh and rescan folders |
 | `?` | Show all keys |

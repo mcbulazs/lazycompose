@@ -152,6 +152,7 @@ Flags override the config:
 | `-theme NAME` | Colour theme. |
 | `-config FILE` | Use a different config file. |
 | `-version` | Print the version and exit. |
+| `-cd-file FILE` | Where `Q` writes the selected folder, see [Change directory on quit](#change-directory-on-quit). |
 
 ## Keys
 
@@ -180,6 +181,7 @@ stronger version (`r` restart, `R` force recreate).
 | `ctrl+r` | Refresh and rescan folders | `refresh` |
 | `?` | Show all keys | `help` |
 | `q` | Quit | `quit` |
+| `Q` | Quit and leave your shell in the selected environment's folder | `quit_to_folder` |
 
 These keys are fixed: `ctrl+c` always quits, `esc` cancels or clears (a
 filter, a search, a running update all), `enter` confirms input, `y` / `n`
@@ -217,6 +219,44 @@ valid it asks whether to apply the changes with `up -d`; if not, the error is
 shown in the log pane.
 
 Status updates as soon as Docker reports a change (from `docker events`), with a check every 15 seconds. If events are not available it checks every 3 seconds instead.
+
+## Change directory on quit
+
+A program cannot change the folder of the shell that started it, so `Q`
+writes the selected environment's folder to the file given with `-cd-file`
+and a small shell function does the `cd`. Without `-cd-file`, `Q` only shows
+a hint. After a plain `q` the file is empty and you stay where you were.
+
+bash or zsh, in `~/.bashrc` or `~/.zshrc`:
+
+```sh
+lc() {
+    local tmp dir
+    tmp="$(mktemp)"
+    lazycompose -cd-file "$tmp" "$@"
+    dir="$(cat "$tmp")"
+    rm -f "$tmp"
+    if [ -n "$dir" ] && [ -d "$dir" ]; then
+        cd "$dir"
+    fi
+}
+```
+
+fish, in `~/.config/fish/functions/lc.fish`:
+
+```fish
+function lc
+    set -l tmp (mktemp)
+    lazycompose -cd-file $tmp $argv
+    set -l dir (cat $tmp)
+    rm -f $tmp
+    if test -n "$dir"; and test -d "$dir"
+        cd $dir
+    end
+end
+```
+
+Then start it with `lc` instead of `lazycompose`.
 
 ## License
 

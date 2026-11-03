@@ -596,3 +596,41 @@ func TestCommandOutputIsHeld(t *testing.T) {
 		t.Errorf("hold %v, pending %+v", m.holdOutput, m.pendingLogs)
 	}
 }
+
+func TestQuitToFolder(t *testing.T) {
+	// without -cd-file it explains how to set it up and keeps running
+	m := newTestModel(t)
+	next, cmd := m.Update(press("Q")[0])
+	m = next.(Model)
+	if cmd != nil {
+		if _, quit := cmd().(tea.QuitMsg); quit {
+			t.Fatal("should not quit without -cd-file")
+		}
+	}
+	if !strings.Contains(m.status, "-cd-file") || !m.statusErr {
+		t.Errorf("status %q", m.status)
+	}
+
+	// with it, the selected folder is handed back and the app quits
+	m = New(Options{Hostname: "host", Roots: []string{"/srv"}, Envs: testEnvs(), CdFile: "/tmp/x"})
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = send(m, press("down")...)
+	next, cmd = m.Update(press("Q")[0])
+	m = next.(Model)
+	if m.QuitDir() != "/srv/games/mc" {
+		t.Errorf("quit dir %q", m.QuitDir())
+	}
+	if cmd == nil {
+		t.Fatal("expected a quit command")
+	}
+	if _, quit := cmd().(tea.QuitMsg); !quit {
+		t.Error("expected the app to quit")
+	}
+
+	// a plain q leaves no folder
+	m = newTestModel(t)
+	m = send(m, press("q")...)
+	if m.QuitDir() != "" {
+		t.Errorf("q should not set a folder, got %q", m.QuitDir())
+	}
+}

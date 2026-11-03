@@ -31,7 +31,7 @@ func TestSetKeys(t *testing.T) {
 	resetKeys(t)
 	err := SetKeys(map[string][]string{
 		"recreate": {"F"},
-		"quit":     {"q", "Q"},
+		"quit":     {"q", "ctrl+d"},
 		"refresh":  {}, // unbound
 	})
 	if err != nil {
@@ -40,13 +40,13 @@ func TestSetKeys(t *testing.T) {
 	if !key.Matches(runes("F"), keys.Recreate) || key.Matches(runes("R"), keys.Recreate) {
 		t.Error("recreate should move from R to F")
 	}
-	if !key.Matches(runes("Q"), keys.Quit) {
-		t.Error("quit should accept Q")
+	if !key.Matches(tea.KeyMsg{Type: tea.KeyCtrlD}, keys.Quit) {
+		t.Error("quit should accept ctrl+d")
 	}
 	if keys.Refresh.Enabled() {
 		t.Error("refresh should be off")
 	}
-	if label := keys.Quit.Help().Key; label != "q/Q" {
+	if label := keys.Quit.Help().Key; label != "q/ctrl+d" {
 		t.Errorf("help label %q", label)
 	}
 }

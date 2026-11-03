@@ -134,10 +134,11 @@ theme: terminal
 #   pull: p                   update_all: U
 #   logs: l                   shell: x                folder_shell: X
 #   refresh: ctrl+r           help: "?"               quit: q
+#   quit_to_folder: Q
 #
 # keys:
 #   recreate: F
-#   quit: [q, Q]
+#   quit: [q, ctrl+d]
 `
 
 func loadConfig(path string) (config, error) {
@@ -213,6 +214,7 @@ func main() {
 	theme := flag.String("theme", "", "colour theme: "+strings.Join(ui.ThemeNames(), ", ")+" (overrides config)")
 	flag.Var(&roots, "root", "folder to scan, can be repeated or comma separated (overrides config)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	cdFile := flag.String("cd-file", "", "on quit to folder (Q), write the selected folder to this file")
 	flag.Parse()
 
 	if *showVersion {
@@ -271,15 +273,22 @@ func main() {
 		Find:     find,
 		Theme:    th,
 		Editor:   *cfg.Editor,
+		CdFile:   *cdFile,
 	})
 
 	opts := []tea.ProgramOption{tea.WithAltScreen()}
 	if *cfg.Mouse {
 		opts = append(opts, tea.WithMouseCellMotion())
 	}
-	_, err = tea.NewProgram(m, opts...).Run()
+	final, err := tea.NewProgram(m, opts...).Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "lazycompose:", err)
 		os.Exit(1)
+	}
+	if fm, ok := final.(ui.Model); ok && *cdFile != "" {
+		if err := os.WriteFile(*cdFile, []byte(fm.QuitDir()), 0o600); err != nil {
+			fmt.Fprintln(os.Stderr, "lazycompose:", err)
+			os.Exit(1)
+		}
 	}
 }

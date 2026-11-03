@@ -19,6 +19,7 @@ type keyMap struct {
 	Start, Stop, Restart, Recreate, Toggle   key.Binding
 	Pull, UpdateAll                          key.Binding
 	Logs, Shell, Folder, Refresh, Help, Quit key.Binding
+	QuitToFolder                             key.Binding
 }
 
 // action is a key binding as it is named in the config file.
@@ -54,6 +55,7 @@ var actions = []action{
 	{"refresh", []string{"ctrl+r"}, "refresh", func(k *keyMap) *key.Binding { return &k.Refresh }},
 	{"help", []string{"?"}, "help", func(k *keyMap) *key.Binding { return &k.Help }},
 	{"quit", []string{"q"}, "quit", func(k *keyMap) *key.Binding { return &k.Quit }},
+	{"quit_to_folder", []string{"Q"}, "quit to folder", func(k *keyMap) *key.Binding { return &k.QuitToFolder }},
 }
 
 // fixedKeys keep their meaning wherever they apply, so they cannot be bound.
@@ -177,6 +179,6 @@ func (k keyMap) FullHelp() [][]key.Binding {
 		{k.Filter, k.Problems, k.Edit, k.EditEnv, k.Refresh},
 		{k.Start, k.Stop, k.Restart, k.Recreate, k.Toggle},
 		{k.Pull, k.UpdateAll, k.Logs, k.Shell, k.Folder},
-		{k.Help, k.Quit},
+		{k.Help, k.Quit, k.QuitToFolder},
 	}
 }

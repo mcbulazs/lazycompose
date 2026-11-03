@@ -36,6 +36,8 @@ type Options struct {
 	Find     func() ([]discover.Env, error)
 	Theme    Theme
 	Editor   string
+	// CdFile receives the selected folder when quitting with quit_to_folder
+	CdFile string
 }
 
 type confirm struct {
@@ -87,6 +89,7 @@ type Model struct {
 
 	width, height int
 	scanning      bool
+	quitDir       string                   // set when quitting to a folder
 	stats         map[string]compose.Stats // by container name, for the selected env
 	loadingStats  bool
 
@@ -655,6 +658,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.events.stop()
 		return m, tea.Quit
 
+	case key.Matches(msg, keys.QuitToFolder):
+		if m.opts.CdFile == "" {
+			m.setStatus(keys.QuitToFolder.Help().Key+` needs lazycompose -cd-file, see "Change directory on quit" in the README`, true)
+			return m, nil
+		}
+		e, ok := m.selectedEnv()
+		if !ok {
+			m.setStatus("no environment selected", true)
+			return m, nil
+		}
+		m.quitDir = e.Dir
+		m.stopLogs()
+		m.events.stop()
+		return m, tea.Quit
+
 	case key.Matches(msg, keys.Help):
 		m.showHelp = !m.showHelp
 		m.help.ShowAll = m.showHelp
@@ -899,6 +917,9 @@ func (m *Model) sampleStats() tea.Cmd {
 	m.loadingStats = true
 	return loadStats(m.current, names)
 }
+
+// QuitDir is the folder chosen with quit_to_folder, or "".
+func (m Model) QuitDir() string { return m.quitDir }
 
 func (m Model) serviceRunning(service string) bool {
 	for _, c := range m.containers {

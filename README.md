@@ -28,27 +28,20 @@ lazycompose runs on the host, not in a container, since it calls
 
 ## Build
 
-Everything builds inside Docker, so Go does not need to be installed.
-
-Using the dev service:
+Requires Go 1.27 or newer.
 
 ```sh
-docker compose run --rm dev go build -trimpath -ldflags="-s -w" -o bin/lazycompose ./cmd/lazycompose
+go install github.com/mcbulazs/lazycompose/cmd/lazycompose@latest
 ```
 
-Or using the multi-stage image:
+Or from a clone:
 
 ```sh
-docker build --target bin -t lazycompose-bin .
-id=$(docker create lazycompose-bin /lazycompose)
-docker cp $id:/lazycompose bin/lazycompose
-docker rm $id
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/lazycompose ./cmd/lazycompose
 ```
 
-With BuildKit you can skip the container step:
-`docker build --target bin --output bin .`
-
-The result is a static binary. Install it somewhere on your `PATH`:
+With `CGO_ENABLED=0` the result is a static binary you can copy to another
+machine. Install it somewhere on your `PATH`:
 
 ```sh
 sudo install -m 755 bin/lazycompose /usr/local/bin/lazycompose
@@ -57,7 +50,7 @@ sudo install -m 755 bin/lazycompose /usr/local/bin/lazycompose
 Run the tests:
 
 ```sh
-docker compose run --rm dev go test ./...
+go test ./...
 ```
 
 ## Config

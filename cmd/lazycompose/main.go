@@ -16,10 +16,11 @@ import (
 )
 
 type config struct {
-	Roots    []string          `yaml:"roots"`
-	MaxDepth int               `yaml:"max_depth"`
-	Theme    string            `yaml:"theme"`
-	Colors   map[string]string `yaml:"colors"`
+	Roots    []string                     `yaml:"roots"`
+	MaxDepth int                          `yaml:"max_depth"`
+	Theme    string                       `yaml:"theme"`
+	Themes   map[string]map[string]string `yaml:"themes"`
+	Colors   map[string]string            `yaml:"colors"`
 }
 
 type rootsFlag []string
@@ -43,20 +44,52 @@ func defaultConfigPath() string {
 	return filepath.Join(dir, "lazycompose", "config.yaml")
 }
 
-const defaultConfig = `# Folders to scan for compose files.
+const defaultConfig = `# lazycompose config
+#
+# This file was created on first run. Delete it to get the defaults back.
+# Command line flags (-root, -max-depth, -theme) override these values.
+
+# Folders to scan for compose files. Every folder below a root that has a
+# compose.yaml, compose.yml, docker-compose.yaml or docker-compose.yml is
+# shown as one environment. "~" is your home folder; keep it in quotes.
 roots:
   - "~"
+#  - /srv/stacks
 
 # How many folders deep to look under each root. 0 means no limit.
+# Hidden folders, node_modules, vendor, testdata and the Go module cache are
+# always skipped, and folders inside an environment are not scanned.
 max_depth: 0
 
-# Colour theme: terminal, onedark, tokyonight, catppuccin, gruvbox or nord.
-# "terminal" uses your terminal's own colours.
+# Colour theme. Built in: terminal, onedark, tokyonight, catppuccin, gruvbox
+# and nord. "terminal" uses your terminal's own colours; the others use fixed
+# colours and paint the terminal background while lazycompose runs.
+# You can also use the name of one of your own themes from below.
 theme: terminal
 
-# Override single colours with a hex value or an ANSI number (0-255).
-# Keys: border, focus, text, dim, green, yellow, red, select_bg, select_fg,
-# background
+# Your own themes. Each one starts from a built-in theme given by "base"
+# (terminal if left out) and changes the colours you list. Colours are hex
+# values like "#ff9e64" or terminal colour numbers from 0 to 255; quote them.
+#
+# Colour keys:
+#   border      borders of panes that are not focused
+#   focus       border and title of the focused pane, keys in the footer
+#   text        normal text
+#   dim         secondary text and group names
+#   green       running services
+#   yellow      partly running environments and questions
+#   red         errors
+#   select_bg   background of the selected row
+#   select_fg   text of the selected row
+#   background  terminal background, hex only
+#
+# themes:
+#   sunset:
+#     base: onedark
+#     focus: "#ff9e64"
+#     select_bg: "#3b3052"
+
+# Change single colours of whichever theme is active, using the same keys.
 # colors:
 #   focus: "#7aa2f7"
 `
@@ -89,6 +122,7 @@ func loadConfig(path string) (config, error) {
 	if file.Theme != "" {
 		cfg.Theme = file.Theme
 	}
+	cfg.Themes = file.Themes
 	cfg.Colors = file.Colors
 	return cfg, nil
 }
@@ -125,7 +159,7 @@ func main() {
 	if *theme != "" {
 		cfg.Theme = *theme
 	}
-	th, err := ui.LoadTheme(cfg.Theme, cfg.Colors)
+	th, err := ui.LoadTheme(cfg.Theme, cfg.Themes, cfg.Colors)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "lazycompose:", err)
 		os.Exit(1)

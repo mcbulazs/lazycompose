@@ -46,3 +46,25 @@ func TestLoadConfigKeepsExisting(t *testing.T) {
 		t.Fatalf("existing file was changed: %q", b)
 	}
 }
+
+func TestLoadConfigThemes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := `theme: sunset
+themes:
+  sunset:
+    base: onedark
+    focus: "#ff9e64"
+    dim: 8
+`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"base": "onedark", "focus": "#ff9e64", "dim": "8"}
+	if cfg.Theme != "sunset" || !reflect.DeepEqual(cfg.Themes["sunset"], want) {
+		t.Fatalf("unexpected config %+v", cfg)
+	}
+}

@@ -58,29 +58,71 @@ func ThemeNames() []string {
 	return names
 }
 
-// LoadTheme returns a built-in theme with single colours overridden.
-func LoadTheme(name string, overrides map[string]string) (Theme, error) {
+// LoadTheme picks a theme by name from the built-in ones or the user's own,
+// then applies single colour overrides. A user theme starts from a built-in
+// theme given by its "base" key, or from the default theme.
+func LoadTheme(name string, custom map[string]map[string]string, overrides map[string]string) (Theme, error) {
 	if name == "" {
 		name = DefaultTheme
 	}
-	t, ok := Themes[name]
-	if !ok {
-		return t, fmt.Errorf("unknown theme %q, available: %s", name, strings.Join(ThemeNames(), ", "))
+
+	var t Theme
+	if colors, ok := custom[name]; ok {
+		base := colors["base"]
+		if base == "" {
+			base = DefaultTheme
+			if _, builtin := Themes[name]; builtin {
+				base = name
+			}
+		}
+		bt, ok := Themes[base]
+		if !ok {
+			return t, fmt.Errorf("themes.%s.base: %q is not a built-in theme, use one of: %s",
+				name, base, strings.Join(ThemeNames(), ", "))
+		}
+		t = bt
+		for _, k := range sortedKeys(colors) {
+			if k == "base" {
+				continue
+			}
+			if err := t.set(k, colors[k]); err != nil {
+				return t, fmt.Errorf("themes.%s.%s: %w", name, k, err)
+			}
+		}
+	} else if bt, ok := Themes[name]; ok {
+		t = bt
+	} else {
+		names := ThemeNames()
+		names = append(names, sortedKeys(custom)...)
+		return t, fmt.Errorf("unknown theme %q, available: %s", name, strings.Join(names, ", "))
 	}
-	for k, v := range overrides {
-		if err := t.set(k, v); err != nil {
-			return t, err
+
+	for _, k := range sortedKeys(overrides) {
+		if err := t.set(k, overrides[k]); err != nil {
+			return t, fmt.Errorf("colors.%s: %w", k, err)
 		}
 	}
 	return t, nil
 }
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// ColorKeys are the colour names a theme can set.
+var ColorKeys = []string{"border", "focus", "text", "dim", "green", "yellow", "red", "select_bg", "select_fg", "background"}
 
 var hexColor = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 
 func (t *Theme) set(key, value string) error {
 	value = strings.TrimSpace(value)
 	if n, err := strconv.Atoi(value); !hexColor.MatchString(value) && (err != nil || n < 0 || n > 255) {
-		return fmt.Errorf("colors.%s: %q is not a hex colour or 0-255", key, value)
+		return fmt.Errorf("%q is not a hex colour or 0-255", value)
 	}
 	c := lipgloss.Color(value)
 	switch key {
@@ -104,11 +146,11 @@ func (t *Theme) set(key, value string) error {
 		t.SelectFg = c
 	case "background":
 		if !hexColor.MatchString(value) {
-			return fmt.Errorf("colors.background: %q must be a hex colour", value)
+			return fmt.Errorf("%q must be a hex colour", value)
 		}
 		t.Background = value
 	default:
-		return fmt.Errorf("unknown colour %q", key)
+		return fmt.Errorf("unknown colour key, use one of: %s", strings.Join(ColorKeys, ", "))
 	}
 	return nil
 }

@@ -56,7 +56,7 @@ go test ./...
 ## Config
 
 On first run lazycompose creates `~/.config/lazycompose/config.yaml` with the
-defaults. Edit it to point at your own folders:
+defaults and a comment for every option. Edit it to point at your own folders:
 
 ```yaml
 roots:
@@ -72,19 +72,48 @@ colors:
 | --- | --- | --- |
 | `roots` | your home folder | Folders to scan for compose files. |
 | `max_depth` | `0` | How many folders deep to look. `0` means no limit. |
-| `theme` | `terminal` | `terminal`, `onedark`, `tokyonight`, `catppuccin`, `gruvbox` or `nord`. |
-| `colors` | | Override single colours with a hex value or an ANSI number (0-255). |
-
-The `terminal` theme uses your terminal's own colours, like lazygit does: a
-green border on the active pane and a blue selected line. The other themes
-use fixed colours and paint the terminal background while lazycompose runs.
-
-Colour keys: `border`, `focus`, `text`, `dim`, `green`, `yellow`, `red`,
-`select_bg`, `select_fg` and `background`.
+| `theme` | `terminal` | A built-in theme or one of your own. |
+| `themes` | | Your own themes, see below. |
+| `colors` | | Change single colours of the active theme. |
 
 Folders named `node_modules`, `vendor` or `testdata`, hidden folders and the
 Go module cache are skipped. Once a compose file is found in a folder, its
 subfolders are not scanned.
+
+### Themes
+
+Built-in themes: `terminal`, `onedark`, `tokyonight`, `catppuccin`, `gruvbox`
+and `nord`. The `terminal` theme uses your terminal's own colours, like lazygit
+does: a green border on the active pane and a blue selected line. The others
+use fixed colours and paint the terminal background while lazycompose runs.
+
+To make your own, add it under `themes` and select it with `theme`. It starts
+from the built-in theme in `base` (`terminal` if left out) and changes only the
+colours you list:
+
+```yaml
+theme: sunset
+themes:
+  sunset:
+    base: onedark
+    focus: "#ff9e64"
+    select_bg: "#3b3052"
+```
+
+Colours are hex values or terminal colour numbers (0-255).
+
+| Key | Used for |
+| --- | --- |
+| `border` | Borders of panes that are not focused |
+| `focus` | Border and title of the focused pane, keys in the footer |
+| `text` | Normal text |
+| `dim` | Secondary text and group names |
+| `green` | Running services |
+| `yellow` | Partly running environments and questions |
+| `red` | Errors |
+| `select_bg` | Background of the selected row |
+| `select_fg` | Text of the selected row |
+| `background` | Terminal background, hex only |
 
 Flags override the config:
 

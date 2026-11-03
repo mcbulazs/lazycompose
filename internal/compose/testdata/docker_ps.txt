@@ -8,3 +8,4 @@
 {"ID":"f3","Names":"crashed-web-1","State":"running","Status":"Up 9 seconds","HealthStatus":"none","Labels":"com.docker.compose.project.working_dir=/srv/stacks/crashed,com.docker.compose.service=web,com.docker.compose.oneoff=False"}
 {"ID":"f4","Names":"crashed-worker-1","State":"exited","Status":"Exited (2) 8 seconds ago","HealthStatus":"none","Labels":"com.docker.compose.project.working_dir=/srv/stacks/crashed,com.docker.compose.service=worker,com.docker.compose.oneoff=False"}
 {"ID":"f5","Names":"stopped-app-1","State":"exited","Status":"Exited (137) 6 seconds ago","HealthStatus":"none","Labels":"com.docker.compose.project.working_dir=/srv/stacks/stopped,com.docker.compose.service=app,com.docker.compose.oneoff=False"}
+{"ID":"f6","Names":"old-db-1","State":"exited","Status":"Exited (0) 26 hours ago","HealthStatus":"unhealthy","Labels":"com.docker.compose.project.working_dir=/srv/stacks/old,com.docker.compose.service=db,com.docker.compose.oneoff=False"}

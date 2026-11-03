@@ -152,6 +152,7 @@ func TestParseDockerPSProblems(t *testing.T) {
 		"/srv/stacks/loop":     1, // restarting
 		"/srv/stacks/crashed":  1, // worker exited with 2
 		"/srv/stacks/stopped":  0, // killed by a stop, not a crash
+		"/srv/stacks/old":      0, // stopped, health status left over
 		"/srv/stacks/web/blog": 0, // worker exited with 137
 		"/srv/stacks/jellyfin": 0,
 	}
@@ -179,6 +180,7 @@ func TestContainerProblem(t *testing.T) {
 		{Container{State: "exited", ExitCode: 1}, true},
 		{Container{State: "exited", ExitCode: 137}, false},
 		{Container{State: "exited", ExitCode: 143}, false},
+		{Container{State: "exited", Health: "unhealthy"}, false},
 	}
 	for _, tt := range tests {
 		if got := tt.c.Problem(); got != tt.want {

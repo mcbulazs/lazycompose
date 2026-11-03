@@ -110,10 +110,11 @@ func (c Container) Problem() bool { return problem(c.State, c.Health, c.ExitCode
 
 // problem is true for unhealthy, restarting or dead containers, and for
 // ones that exited with an error. 137 and 143 are what a normal stop or
-// kill leaves behind, so they do not count.
+// kill leaves behind, so they do not count. Docker keeps the last health
+// status after a container stops, so health only counts while running.
 func problem(state, health string, exitCode int) bool {
 	switch {
-	case health == "unhealthy", state == "restarting", state == "dead":
+	case state == "running" && health == "unhealthy", state == "restarting", state == "dead":
 		return true
 	case state == "exited":
 		return exitCode != 0 && exitCode != 137 && exitCode != 143

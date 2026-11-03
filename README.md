@@ -177,7 +177,7 @@ stronger version (`r` restart, `R` force recreate).
 | `U` | Update all running environments: `pull`, then `up -d`, one at a time (asks first) | `update_all` |
 | `l` | Fetch the logs again | `logs` |
 | `x` | Open a shell in the selected service (bash if it has it, otherwise sh) | `shell` |
-| `X` | Open your shell (`$SHELL`) in the environment's folder; `exit` to come back | `folder_shell` |
+| `X` | Open your shell in the environment's folder: a new tmux window when running inside tmux, otherwise a nested shell (`exit` to come back) | `folder_shell` |
 | `ctrl+r` | Refresh and rescan folders | `refresh` |
 | `?` | Show all keys | `help` |
 | `q` | Quit | `quit` |

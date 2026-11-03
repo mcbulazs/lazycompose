@@ -534,6 +534,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setStatus("", false)
 		return m, openShell(msg.env, msg.service, msg.shell)
 
+	case tmuxWindowMsg:
+		if msg.err != nil {
+			// tmux did not work out; fall back to a nested shell
+			m.setStatus("tmux: "+firstLine(msg.err.Error()), true)
+			return m, openFolderShell(msg.env)
+		}
+		m.setStatus("opened a tmux window in "+msg.env.Rel, false)
+		return m, nil
+
 	case folderShellMsg:
 		if msg.err != nil {
 			m.setStatus("shell: "+msg.err.Error(), true)
@@ -870,7 +879,7 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.runAction(e, "starting "+name, "docker compose up -d ("+name+")", "up", "-d", s)
 
 	case key.Matches(msg, keys.Folder):
-		return m, openFolderShell(e)
+		return m, openFolder(e)
 
 	case key.Matches(msg, keys.Shell):
 		s := m.selectedService()

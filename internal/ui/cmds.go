@@ -327,6 +327,32 @@ type folderShellMsg struct {
 	err error
 }
 
+type tmuxWindowMsg struct {
+	env discover.Env
+	err error
+}
+
+// tmuxNewWindow is replaced in tests.
+var tmuxNewWindow = func(dir, name string) *exec.Cmd {
+	return exec.Command("tmux", "new-window", "-c", dir, "-n", name)
+}
+
+// openFolder opens a shell in the environment's folder: a new tmux window
+// when running inside tmux, so lazycompose keeps running, otherwise a
+// nested shell.
+func openFolder(e discover.Env) tea.Cmd {
+	if os.Getenv("TMUX") == "" {
+		return openFolderShell(e)
+	}
+	return func() tea.Msg {
+		out, err := tmuxNewWindow(e.Dir, e.Name()).CombinedOutput()
+		if err != nil && len(out) > 0 {
+			err = errors.New(strings.TrimSpace(string(out)))
+		}
+		return tmuxWindowMsg{env: e, err: err}
+	}
+}
+
 // openFolderShell starts the user's shell in the environment's folder.
 func openFolderShell(e discover.Env) tea.Cmd {
 	sh := os.Getenv("SHELL")

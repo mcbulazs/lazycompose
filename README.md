@@ -71,7 +71,7 @@ roots:
 max_depth: 3
 ```
 
-Both values are optional. `roots` defaults to `/mnt/data/global` and
+Both values are optional. `roots` defaults to `~/stacks` and
 `max_depth` to 3. Flags:
 
 | Flag | Description |

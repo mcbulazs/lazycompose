@@ -42,7 +42,7 @@ func defaultConfigPath() string {
 }
 
 func loadConfig(path string) (config, error) {
-	cfg := config{Roots: []string{"/mnt/data/global"}, MaxDepth: 3}
+	cfg := config{Roots: []string{"~/stacks"}, MaxDepth: 3}
 	if path == "" {
 		return cfg, nil
 	}

@@ -1,0 +1,1 @@
+[{"ID":"d4e5f6a1b2c3","Name":"minecraft-server-1","Service":"server","Project":"minecraft","Image":"itzg/minecraft-server","State":"running","Health":"starting","Status":"Up Less than a second (health: starting)","ExitCode":0,"Publishers":[{"URL":"0.0.0.0","TargetPort":25565,"PublishedPort":25565,"Protocol":"tcp"}]}]

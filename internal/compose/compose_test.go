@@ -188,3 +188,22 @@ func TestContainerProblem(t *testing.T) {
 		}
 	}
 }
+
+func TestParseStats(t *testing.T) {
+	m, err := ParseStats(fixture(t, "stats.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]Stats{
+		"blog-web-1": {CPU: "0.15%", Mem: "52.3MiB"},
+		"blog-db-1":  {CPU: "103.40%", Mem: "1.084GiB"},
+	}
+	if len(m) != len(want) {
+		t.Fatalf("got %d entries, want %d", len(m), len(want))
+	}
+	for name, w := range want {
+		if m[name] != w {
+			t.Errorf("%s: got %+v, want %+v", name, m[name], w)
+		}
+	}
+}

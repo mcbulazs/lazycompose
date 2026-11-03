@@ -166,7 +166,7 @@ func TestServicesTable(t *testing.T) {
 	if rows[0][0] != "backup" || rows[0][1] != "○ not created" {
 		t.Errorf("backup row %v", rows[0])
 	}
-	if rows[1][0] != "mc" || rows[1][1] != "● running" || rows[1][4] != "minecraft-server:latest" || rows[1][5] != "2 hours" {
+	if rows[1][0] != "mc" || rows[1][1] != "● running" || rows[1][6] != "minecraft-server:latest" || rows[1][7] != "2 hours" {
 		t.Errorf("mc row %v", rows[1])
 	}
 
@@ -292,7 +292,7 @@ func TestStateText(t *testing.T) {
 }
 
 func TestColumnsFitContent(t *testing.T) {
-	rows := []table.Row{{"app", "● running", "healthy", "8443->80/tcp", "nextcloud:30-apache", "2 minutes"}}
+	rows := []table.Row{{"app", "● running", "healthy", "0.15%", "52.3MiB", "8443->80/tcp", "nextcloud:30-apache", "2 minutes"}}
 
 	cols := columns(120, rows)
 	for i, c := range cols {
@@ -302,19 +302,24 @@ func TestColumnsFitContent(t *testing.T) {
 	}
 
 	// in a narrow pane IMAGE gives up space first
-	cols = columns(66, rows)
-	if cols[4].Width != 10 || cols[3].Width != lipgloss.Width(rows[0][3]) {
-		t.Errorf("IMAGE %d, PORTS %d; want IMAGE shrunk to 10 and PORTS untouched", cols[4].Width, cols[3].Width)
+	cols = columns(82, rows)
+	if cols[6].Width != 10 || cols[5].Width != lipgloss.Width(rows[0][5]) {
+		t.Errorf("IMAGE %d, PORTS %d; want IMAGE shrunk to 10 and PORTS untouched", cols[6].Width, cols[5].Width)
 	}
 
 	// and in a very narrow one the total still fits
-	cols = columns(60, rows)
+	cols = columns(70, rows)
 	total := 0
 	for _, c := range cols {
-		total += c.Width + 2
+		if c.Width > 0 {
+			total += c.Width + 2
+		}
 	}
-	if total > 60 {
-		t.Errorf("columns take %d, want <= 60", total)
+	if cols[3].Width != 0 || cols[4].Width != 0 {
+		t.Errorf("CPU and MEM should be hidden first, got %d and %d", cols[3].Width, cols[4].Width)
+	}
+	if total > 70 {
+		t.Errorf("columns take %d, want <= 70", total)
 	}
 	if cols[1].Width < lipgloss.Width("● running") {
 		t.Errorf("STATE should not shrink, got %d", cols[1].Width)
@@ -364,5 +369,28 @@ func TestMouse(t *testing.T) {
 	m = send(m, click(m.leftWidth()+5, m.servicesHeight()+3))
 	if m.focus != focusLogs {
 		t.Errorf("click below the services pane should focus logs, got %v", m.focus)
+	}
+}
+
+func TestStatsInTable(t *testing.T) {
+	m := newTestModel(t) // plex selected
+	m = send(m, psMsg{dir: "/srv/plex", containers: []compose.Container{
+		{Name: "plex-plex-1", Service: "plex", State: "running"},
+	}})
+	if !m.loadingStats {
+		t.Fatal("a running container should start a stats sample")
+	}
+	m = send(m, statsMsg{dir: "/srv/plex", stats: map[string]compose.Stats{
+		"plex-plex-1": {CPU: "12.5%", Mem: "310MiB"},
+	}})
+	row := m.table.Rows()[0]
+	if row[3] != "12.5%" || row[4] != "310MiB" {
+		t.Errorf("row %v", row)
+	}
+
+	// switching env drops the old numbers
+	m = send(m, press("down")...)
+	if m.stats != nil {
+		t.Errorf("stats should be cleared on env switch")
 	}
 }

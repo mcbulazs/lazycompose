@@ -338,3 +338,23 @@ func openFolderShell(e discover.Env) tea.Cmd {
 		return folderShellMsg{env: e, err: err}
 	})
 }
+
+const statsPause = time.Second
+
+type (
+	statsMsg struct {
+		dir   string
+		stats map[string]compose.Stats
+		err   error
+	}
+	statsTickMsg struct{ dir string }
+)
+
+func loadStats(dir string, names []string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		st, err := compose.ContainerStats(ctx, names)
+		return statsMsg{dir: dir, stats: st, err: err}
+	}
+}

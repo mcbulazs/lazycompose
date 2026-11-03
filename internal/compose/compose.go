@@ -292,3 +292,42 @@ func Short(image string) string {
 	}
 	return image
 }
+
+// Stats is the resource use of one container.
+type Stats struct {
+	CPU string // e.g. "0.15%"
+	Mem string // e.g. "52.3MiB"
+}
+
+// ContainerStats samples CPU and memory for the named containers. It takes
+// about two seconds since docker measures CPU over an interval.
+func ContainerStats(ctx context.Context, names []string) (map[string]Stats, error) {
+	args := append([]string{"stats", "--no-stream", "--format", "json"}, names...)
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, wrap(err, stderr.Bytes())
+	}
+	return ParseStats(out)
+}
+
+// ParseStats parses `docker stats --format json`, keyed by container name.
+func ParseStats(data []byte) (map[string]Stats, error) {
+	res := map[string]Stats{}
+	dec := json.NewDecoder(bytes.NewReader(bytes.TrimSpace(data)))
+	for dec.More() {
+		var row struct {
+			Name     string `json:"Name"`
+			CPUPerc  string `json:"CPUPerc"`
+			MemUsage string `json:"MemUsage"`
+		}
+		if err := dec.Decode(&row); err != nil {
+			return nil, err
+		}
+		mem, _, _ := strings.Cut(row.MemUsage, " / ")
+		res[row.Name] = Stats{CPU: row.CPUPerc, Mem: strings.TrimSpace(mem)}
+	}
+	return res, nil
+}

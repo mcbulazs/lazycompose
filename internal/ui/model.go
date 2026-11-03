@@ -77,6 +77,8 @@ type Model struct {
 
 	width, height int
 	scanning      bool
+	stats         map[string]compose.Stats // by container name, for the selected env
+	loadingStats  bool
 
 	events         *eventStream
 	eventsStarting bool
@@ -173,6 +175,7 @@ func (m *Model) onSelect() tea.Cmd {
 	}
 	m.current = e.Dir
 	m.containers = nil
+	m.stats = nil
 	m.table.SetCursor(0)
 	m.stopLogs()
 	m.setLogPlaceholder()
@@ -374,7 +377,26 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.containers = msg.containers
 		m.refreshTable()
-		return m, nil
+		return m, m.sampleStats()
+
+	case statsMsg:
+		m.loadingStats = false
+		if msg.dir != m.current {
+			return m, nil
+		}
+		if msg.err == nil {
+			m.stats = msg.stats
+			m.refreshTable()
+		}
+		// sample again shortly; docker stats itself takes about two seconds
+		dir := msg.dir
+		return m, tea.Tick(statsPause, func(time.Time) tea.Msg { return statsTickMsg{dir: dir} })
+
+	case statsTickMsg:
+		if msg.dir != m.current {
+			return m, nil
+		}
+		return m, m.sampleStats()
 
 	case envsMsg:
 		m.busy = max(0, m.busy-1)
@@ -786,6 +808,26 @@ func (m *Model) applyProblemFilter() {
 	m.list.setFilter(m.list.query)
 }
 
+// sampleStats starts a stats sample for the running containers of the
+// selected env, unless one is already running.
+func (m *Model) sampleStats() tea.Cmd {
+	if m.loadingStats {
+		return nil
+	}
+	var names []string
+	for _, c := range m.containers {
+		if c.Running() {
+			names = append(names, c.Name)
+		}
+	}
+	if len(names) == 0 {
+		m.stats = nil
+		return nil
+	}
+	m.loadingStats = true
+	return loadStats(m.current, names)
+}
+
 func (m Model) serviceRunning(service string) bool {
 	for _, c := range m.containers {
 		if c.Service == service && c.Running() {
@@ -805,12 +847,13 @@ func firstLine(s string) string {
 
 // services table
 
-var columnTitles = []string{"SERVICE", "STATE", "HEALTH", "PORTS", "IMAGE", "UPTIME"}
+var columnTitles = []string{"SERVICE", "STATE", "HEALTH", "CPU", "MEM", "PORTS", "IMAGE", "UPTIME"}
 
 // columns sizes each column to its widest cell. When the table does not fit,
-// IMAGE, then PORTS, then SERVICE give up space, down to a minimum.
+// IMAGE, then PORTS, then SERVICE give up space down to a minimum, and then
+// the least important columns are hidden.
 func columns(w int, rows []table.Row) []table.Column {
-	limit := []int{24, 14, 9, 32, 40, 18}
+	limit := []int{24, 14, 9, 8, 9, 32, 40, 18}
 	widths := make([]int, len(columnTitles))
 	for i, t := range columnTitles {
 		widths[i] = len(t)
@@ -825,7 +868,7 @@ func columns(w int, rows []table.Row) []table.Column {
 	for _, wd := range widths {
 		over += wd
 	}
-	for _, c := range []struct{ col, min int }{{4, 10}, {3, 9}, {0, 8}} {
+	for _, c := range []struct{ col, min int }{{6, 10}, {5, 9}, {0, 8}} {
 		if over <= 0 {
 			break
 		}
@@ -836,10 +879,20 @@ func columns(w int, rows []table.Row) []table.Column {
 		}
 	}
 
-	// still too wide: trim the widest column until it fits, STATE last
+	// still too wide: hide the least important columns; the table skips
+	// columns with no width
+	for _, col := range []int{3, 4, 2, 7, 5, 6} {
+		if over <= 0 {
+			break
+		}
+		over -= widths[col] + 2
+		widths[col] = 0
+	}
+
+	// and as a last resort trim the widest column, STATE last
 	for over > 0 {
 		widest := 4
-		for _, i := range []int{4, 3, 0, 5, 2, 1} {
+		for _, i := range []int{6, 5, 0, 7, 4, 3, 2, 1} {
 			if widths[i] > widths[widest] {
 				widest = i
 			}
@@ -911,7 +964,7 @@ func (m *Model) refreshTable() {
 	for _, n := range names {
 		cs := byService[n]
 		if len(cs) == 0 {
-			rows = append(rows, table.Row{n, "○ not created", "", "", "", ""})
+			rows = append(rows, table.Row{n, "○ not created", "", "", "", "", "", ""})
 			m.rowService = append(m.rowService, n)
 			continue
 		}
@@ -924,7 +977,8 @@ func (m *Model) refreshTable() {
 			if health == "" {
 				health = "-"
 			}
-			rows = append(rows, table.Row{label, stateText(c), health, c.Ports(), compose.Short(c.Image), c.Uptime()})
+			st := m.stats[c.Name]
+			rows = append(rows, table.Row{label, stateText(c), health, st.CPU, st.Mem, c.Ports(), compose.Short(c.Image), c.Uptime()})
 			m.rowService = append(m.rowService, n)
 		}
 	}

@@ -24,6 +24,11 @@ Every folder with a `compose.yaml` (or `compose.yml`, `docker-compose.yaml`,
 Environments are grouped by their parent folder. The status dot shows
 `●` all services running, `◐` some running, `○` down.
 
+The services table shows each container's state, health, CPU and memory use,
+ports, image and uptime. CPU and memory are sampled every few seconds for the
+selected environment only. On a narrow terminal the less important columns
+are hidden.
+
 Environments with a problem are shown in red, and the header counts them. A
 problem is a container that is unhealthy, restarting in a loop, or exited with
 an error. Exit codes 137 and 143 are left by a normal stop, so a stack you

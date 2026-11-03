@@ -33,6 +33,17 @@ stopped yourself does not count.
 lazycompose runs on the host, not in a container, since it calls
 `docker compose` and opens your editor.
 
+## Install
+
+Download a release binary (Linux amd64; use `arm64` for ARM boards):
+
+```sh
+curl -fsSL https://github.com/mcbulazs/lazycompose/releases/latest/download/lazycompose_linux_amd64.tar.gz | tar -xz lazycompose
+sudo install -m 755 lazycompose /usr/local/bin/lazycompose
+```
+
+Each release also has a `checksums.txt` with SHA-256 sums.
+
 ## Build
 
 Requires Go 1.27 or newer.
@@ -170,3 +181,13 @@ Status refreshes every 3 seconds.
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+## Releasing
+
+Push a tag starting with `v` and GitHub Actions builds the Linux binaries and
+publishes a release:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```

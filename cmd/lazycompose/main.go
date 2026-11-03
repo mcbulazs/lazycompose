@@ -16,8 +16,10 @@ import (
 )
 
 type config struct {
-	Roots    []string `yaml:"roots"`
-	MaxDepth int      `yaml:"max_depth"`
+	Roots    []string          `yaml:"roots"`
+	MaxDepth int               `yaml:"max_depth"`
+	Theme    string            `yaml:"theme"`
+	Colors   map[string]string `yaml:"colors"`
 }
 
 type rootsFlag []string
@@ -45,12 +47,22 @@ const defaultConfig = `# Folders to scan for compose files.
 roots:
   - "~"
 
-# How many folders deep to look under each root.
-max_depth: 3
+# How many folders deep to look under each root. 0 means no limit.
+max_depth: 0
+
+# Colour theme: terminal, tokyonight, catppuccin, gruvbox or nord.
+# "terminal" uses your terminal's own colours.
+theme: terminal
+
+# Override single colours with a hex value or an ANSI number (0-255).
+# Keys: border, focus, text, dim, green, yellow, red, select_bg, select_fg,
+# background
+# colors:
+#   focus: "#7aa2f7"
 `
 
 func loadConfig(path string) (config, error) {
-	cfg := config{Roots: []string{"~"}, MaxDepth: 3}
+	cfg := config{Roots: []string{"~"}, Theme: "terminal"}
 	if path == "" {
 		return cfg, nil
 	}
@@ -73,9 +85,11 @@ func loadConfig(path string) (config, error) {
 	if len(file.Roots) > 0 {
 		cfg.Roots = file.Roots
 	}
-	if file.MaxDepth > 0 {
-		cfg.MaxDepth = file.MaxDepth
+	cfg.MaxDepth = max(file.MaxDepth, 0)
+	if file.Theme != "" {
+		cfg.Theme = file.Theme
 	}
+	cfg.Colors = file.Colors
 	return cfg, nil
 }
 
@@ -92,7 +106,8 @@ func expandHome(p string) string {
 func main() {
 	var roots rootsFlag
 	configPath := flag.String("config", defaultConfigPath(), "config file")
-	depth := flag.Int("max-depth", 0, "how deep to look for compose files (overrides config)")
+	depth := flag.Int("max-depth", -1, "how deep to look for compose files, 0 for no limit (overrides config)")
+	theme := flag.String("theme", "", "colour theme: "+strings.Join(ui.ThemeNames(), ", ")+" (overrides config)")
 	flag.Var(&roots, "root", "folder to scan, can be repeated or comma separated (overrides config)")
 	flag.Parse()
 
@@ -104,8 +119,16 @@ func main() {
 	if len(roots) > 0 {
 		cfg.Roots = roots
 	}
-	if *depth > 0 {
+	if *depth >= 0 {
 		cfg.MaxDepth = *depth
+	}
+	if *theme != "" {
+		cfg.Theme = *theme
+	}
+	th, err := ui.LoadTheme(cfg.Theme, cfg.Colors)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "lazycompose:", err)
+		os.Exit(1)
 	}
 	for i, r := range cfg.Roots {
 		cfg.Roots[i] = expandHome(r)
@@ -127,13 +150,18 @@ func main() {
 		Roots:    cfg.Roots,
 		Envs:     envs,
 		Find:     find,
+		Theme:    th,
 	})
 
-	// paint the terminal background while running, reset on exit
-	fmt.Print("\x1b]11;#1a1b26\x07")
-	defer fmt.Print("\x1b]111\x07")
-
-	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
+	// paint the terminal background while running
+	if th.Background != "" {
+		fmt.Print("\x1b]11;" + th.Background + "\x07")
+	}
+	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
+	if th.Background != "" {
+		fmt.Print("\x1b]111\x07")
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "lazycompose:", err)
 		os.Exit(1)
 	}

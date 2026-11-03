@@ -33,6 +33,7 @@ type Options struct {
 	Roots    []string
 	Envs     []discover.Env
 	Find     func() ([]discover.Env, error)
+	Theme    Theme
 }
 
 type confirm struct {
@@ -77,6 +78,9 @@ type Model struct {
 }
 
 func New(opts Options) Model {
+	if opts.Theme.Focus != nil {
+		applyTheme(opts.Theme)
+	}
 	fi := textinput.New()
 	fi.Prompt = "/"
 	fi.PromptStyle = accentStyle

@@ -62,16 +62,37 @@ defaults. Edit it to point at your own folders:
 roots:
   - /srv/stacks
   - ~/projects
-max_depth: 3
+max_depth: 0
+theme: terminal
+colors:
+  focus: "#7aa2f7"
 ```
 
-Both values are optional. `roots` defaults to your home folder and
-`max_depth` to 3. Flags:
+| Key | Default | Description |
+| --- | --- | --- |
+| `roots` | your home folder | Folders to scan for compose files. |
+| `max_depth` | `0` | How many folders deep to look. `0` means no limit. |
+| `theme` | `terminal` | `terminal`, `tokyonight`, `catppuccin`, `gruvbox` or `nord`. |
+| `colors` | | Override single colours with a hex value or an ANSI number (0-255). |
+
+The `terminal` theme uses your terminal's own colours, so it matches whatever
+theme your terminal already has. The other themes also paint the terminal
+background while lazycompose runs.
+
+Colour keys: `border`, `focus`, `text`, `dim`, `green`, `yellow`, `red`,
+`select_bg`, `select_fg` and `background`.
+
+Folders named `node_modules`, `vendor` or `testdata`, hidden folders and the
+Go module cache are skipped. Once a compose file is found in a folder, its
+subfolders are not scanned.
+
+Flags override the config:
 
 | Flag | Description |
 | --- | --- |
-| `-root DIR` | Folder to scan. Repeat or comma separate for several. Overrides `roots`. |
-| `-max-depth N` | How many folders deep to look. Overrides `max_depth`. |
+| `-root DIR` | Folder to scan. Repeat or comma separate for several. |
+| `-max-depth N` | How many folders deep to look, `0` for no limit. |
+| `-theme NAME` | Colour theme. |
 | `-config FILE` | Use a different config file. |
 
 ## Keys

@@ -68,6 +68,7 @@ type Model struct {
 	status    string
 	statusErr bool
 	confirm   *confirm
+	updating  *updateRun
 
 	focus    focus
 	help     help.Model
@@ -404,6 +405,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, loadServices([]discover.Env{e})
 
+	case updateMsg:
+		return m, m.onUpdate(msg)
+
 	case shellFoundMsg:
 		m.busy = max(0, m.busy-1)
 		if msg.err != nil {
@@ -561,6 +565,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filter.SetValue(m.list.query)
 		m.filter.CursorEnd()
 		return m, m.filter.Focus()
+
+	case msg.String() == "esc" && m.updating != nil:
+		m.updating.stopping = true
+		m.setStatus("stopping after "+m.updating.queue[m.updating.next].Rel, false)
+		return m, nil
+
+	case key.Matches(msg, keys.UpdateAll):
+		return m, m.startUpdateAll()
 
 	case msg.String() == "esc":
 		if m.list.query != "" {

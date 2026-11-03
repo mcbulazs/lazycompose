@@ -27,3 +27,18 @@ func TestEditorCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestCountRecreated(t *testing.T) {
+	out := ` Container demo-web-1 Recreate 
+ Container demo-web-1 Recreated 
+ Container demo-db-1 Running 
+ Container demo-worker-1 Recreated 
+ Container demo-web-1 Started 
+`
+	if n := countRecreated(out); n != 2 {
+		t.Errorf("got %d, want 2", n)
+	}
+	if n := countRecreated(" Container demo-web-1 Running \n"); n != 0 {
+		t.Errorf("got %d, want 0", n)
+	}
+}

@@ -284,3 +284,36 @@ func (s *logStream) stop() {
 		s.cancel()
 	}
 }
+
+// update all
+
+type updateMsg struct {
+	env       discover.Env
+	recreated int
+	err       error
+}
+
+// updateEnv pulls new images and recreates whatever changed.
+func updateEnv(e discover.Env) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		if _, err := project(e).Run(ctx, "pull", "-q"); err != nil {
+			return updateMsg{env: e, err: err}
+		}
+		out, err := project(e).Run(ctx, "up", "-d")
+		if err != nil {
+			return updateMsg{env: e, err: err}
+		}
+		return updateMsg{env: e, recreated: countRecreated(out)}
+	}
+}
+
+func countRecreated(out string) int {
+	n := 0
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasSuffix(strings.TrimSpace(l), " Recreated") {
+			n++
+		}
+	}
+	return n
+}

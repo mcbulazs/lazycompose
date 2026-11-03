@@ -144,6 +144,7 @@ Flags override the config:
 | `d` | `docker compose down` (asks first) |
 | `r` | `docker compose restart` |
 | `p` | `docker compose pull` |
+| `U` | Update all running environments: `pull`, then `up -d`, one at a time (asks first, `esc` stops after the current one) |
 | `l` | Follow logs |
 | `x` | Open a shell in the selected service (bash if it has it, otherwise sh) |
 | `esc` | Stop following logs |

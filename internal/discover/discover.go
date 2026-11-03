@@ -36,8 +36,25 @@ func (e Env) Group() string {
 	return filepath.ToSlash(g)
 }
 
-// Find scans each root up to maxDepth folders deep. It does not descend into
-// an environment once found, so app data folders are not walked.
+// skipDirs never hold stacks of their own, only dependencies or fixtures.
+var skipDirs = map[string]bool{
+	"node_modules": true,
+	"vendor":       true,
+	"testdata":     true,
+}
+
+func skip(path string, d fs.DirEntry) bool {
+	name := d.Name()
+	if strings.HasPrefix(name, ".") || skipDirs[name] {
+		return true
+	}
+	// Go module cache
+	return name == "mod" && filepath.Base(filepath.Dir(path)) == "pkg"
+}
+
+// Find scans each root up to maxDepth folders deep, or without limit when
+// maxDepth is 0. It does not descend into an environment once found, so app
+// data folders are not walked.
 func Find(roots []string, maxDepth int) ([]Env, error) {
 	var envs []Env
 	seen := map[string]bool{}
@@ -62,7 +79,7 @@ func Find(roots []string, maxDepth int) ([]Env, error) {
 			if !d.IsDir() {
 				return nil
 			}
-			if path != root && strings.HasPrefix(d.Name(), ".") {
+			if path != root && skip(path, d) {
 				return fs.SkipDir
 			}
 
@@ -85,7 +102,7 @@ func Find(roots []string, maxDepth int) ([]Env, error) {
 				return fs.SkipDir
 			}
 
-			if depth >= maxDepth {
+			if maxDepth > 0 && depth >= maxDepth {
 				return fs.SkipDir
 			}
 			return nil

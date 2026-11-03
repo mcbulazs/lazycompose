@@ -112,3 +112,20 @@ func TestFindMissingRoot(t *testing.T) {
 		t.Fatal("expected error for missing root")
 	}
 }
+
+func TestFindUnlimited(t *testing.T) {
+	root := t.TempDir()
+	touch(t, filepath.Join(root, "a/b/c/d/e/compose.yaml"))
+	touch(t, filepath.Join(root, "app/node_modules/x/compose.yaml"))
+	touch(t, filepath.Join(root, "app2/vendor/x/compose.yaml"))
+	touch(t, filepath.Join(root, "src/testdata/compose.yaml"))
+	touch(t, filepath.Join(root, "go/pkg/mod/github.com/x/y@v1/compose.yaml"))
+
+	envs, err := Find([]string{root}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 1 || envs[0].Rel != "a/b/c/d/e" {
+		t.Fatalf("unexpected result: %+v", envs)
+	}
+}

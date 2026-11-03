@@ -178,7 +178,7 @@ After editing, lazycompose runs `docker compose config -q`. If the file is
 valid it asks whether to apply the changes with `up -d`; if not, the error is
 shown in the log pane.
 
-Status refreshes every 3 seconds.
+Status updates as soon as Docker reports a change (from `docker events`), with a check every 15 seconds. If events are not available it checks every 3 seconds instead.
 
 ## License
 

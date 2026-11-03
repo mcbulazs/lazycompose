@@ -18,8 +18,6 @@ import (
 	"github.com/mcbulazs/lazycompose/internal/discover"
 )
 
-const refreshEvery = 3 * time.Second
-
 type (
 	tickMsg   struct{}
 	statesMsg struct {
@@ -63,8 +61,8 @@ func project(e discover.Env) compose.Project {
 	return compose.Project{Dir: e.Dir, File: e.File}
 }
 
-func tick() tea.Cmd {
-	return tea.Tick(refreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
+func tick(every time.Duration) tea.Cmd {
+	return tea.Tick(every, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
 func loadStates() tea.Cmd {

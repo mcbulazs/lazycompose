@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -76,6 +77,11 @@ type Model struct {
 
 	width, height int
 	scanning      bool
+
+	events         *eventStream
+	eventsStarting bool
+	eventsTried    time.Time
+
 	problemsOnly  bool
 	loadingStates bool
 	loadingPS     bool
@@ -120,6 +126,7 @@ func New(opts Options) Model {
 		m.current = e.Dir
 		m.loadingPS = true
 	}
+	m.eventsStarting = true // Init starts the event stream
 	if opts.Envs == nil && opts.Find != nil {
 		m.scanning = true
 		m.busy = 1
@@ -132,9 +139,9 @@ func New(opts Options) Model {
 
 func (m Model) Init() tea.Cmd {
 	if m.scanning {
-		return tea.Batch(m.spin.Tick, rediscover(m.opts.Find), loadStates(), tick())
+		return tea.Batch(m.spin.Tick, rediscover(m.opts.Find), loadStates(), tick(pollEvery), startEvents())
 	}
-	cmds := []tea.Cmd{loadStates(), loadServices(m.opts.Envs), tick()}
+	cmds := []tea.Cmd{loadStates(), loadServices(m.opts.Envs), tick(pollEvery), startEvents()}
 	if c := m.selectCurrent(); c != nil {
 		cmds = append(cmds, c)
 	}
@@ -301,16 +308,38 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tickMsg:
-		cmds := []tea.Cmd{tick()}
-		if !m.loadingStates {
-			m.loadingStates = true
-			cmds = append(cmds, loadStates())
+		every := pollEvery
+		if m.events != nil {
+			every = pollEveryEvents
 		}
-		if e, ok := m.selectedEnv(); ok && !m.loadingPS {
-			m.loadingPS = true
-			cmds = append(cmds, loadPS(e))
+		cmds := []tea.Cmd{tick(every), m.refreshIfIdle()}
+		if m.events == nil && !m.eventsStarting && time.Since(m.eventsTried) > retryEvents {
+			m.eventsStarting = true
+			cmds = append(cmds, startEvents())
 		}
 		return m, tea.Batch(cmds...)
+
+	case eventsStartedMsg:
+		m.eventsStarting = false
+		m.eventsTried = time.Now()
+		if msg.err != nil {
+			return m, nil
+		}
+		m.events = msg.stream
+		return m, msg.stream.next()
+
+	case dockerEventMsg:
+		if msg.stream != m.events {
+			return m, nil
+		}
+		return m, tea.Batch(m.refreshIfIdle(), msg.stream.next())
+
+	case eventsEndMsg:
+		if msg.stream == m.events {
+			m.events = nil
+			m.eventsTried = time.Now()
+		}
+		return m, nil
 
 	case statesMsg:
 		m.loadingStates = false
@@ -468,6 +497,21 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// refreshIfIdle reloads states and the selected env unless a load is already
+// running.
+func (m *Model) refreshIfIdle() tea.Cmd {
+	var cmds []tea.Cmd
+	if !m.loadingStates {
+		m.loadingStates = true
+		cmds = append(cmds, loadStates())
+	}
+	if e, ok := m.selectedEnv(); ok && !m.loadingPS {
+		m.loadingPS = true
+		cmds = append(cmds, loadPS(e))
+	}
+	return tea.Batch(cmds...)
+}
+
 func (m *Model) refreshNow() tea.Cmd {
 	cmds := []tea.Cmd{loadStates()}
 	m.loadingStates = true
@@ -481,6 +525,7 @@ func (m *Model) refreshNow() tea.Cmd {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		m.stopLogs()
+		m.events.stop()
 		return m, tea.Quit
 	}
 
@@ -526,6 +571,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, keys.Quit):
 		m.stopLogs()
+		m.events.stop()
 		return m, tea.Quit
 
 	case key.Matches(msg, keys.Help):

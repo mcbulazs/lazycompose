@@ -109,7 +109,7 @@ func New(opts Options) Model {
 	h.Styles.FullDesc = dimStyle
 	h.Styles.FullSeparator = dimStyle
 
-	t := table.New(table.WithColumns(columns(80)))
+	t := table.New(table.WithColumns(columns(80, nil)))
 
 	m := Model{
 		opts:     opts,
@@ -802,23 +802,57 @@ func firstLine(s string) string {
 
 // services table
 
-func columns(w int) []table.Column {
+var columnTitles = []string{"SERVICE", "STATE", "HEALTH", "PORTS", "IMAGE", "UPTIME"}
+
+// columns sizes each column to its widest cell. When the table does not fit,
+// IMAGE, then PORTS, then SERVICE give up space, down to a minimum.
+func columns(w int, rows []table.Row) []table.Column {
+	limit := []int{24, 14, 9, 32, 40, 18}
+	widths := make([]int, len(columnTitles))
+	for i, t := range columnTitles {
+		widths[i] = len(t)
+		for _, r := range rows {
+			widths[i] = max(widths[i], lipgloss.Width(r[i]))
+		}
+		widths[i] = min(widths[i], limit[i])
+	}
+
 	// each cell has one column of padding on both sides
-	fixed := map[string]int{"SERVICE": 16, "STATE": 13, "HEALTH": 9, "UPTIME": 14}
-	used := 6 * 2
-	for _, v := range fixed {
-		used += v
+	over := len(widths)*2 - w
+	for _, wd := range widths {
+		over += wd
 	}
-	rest := max(w-used, 20)
-	ports := rest * 45 / 100
-	return []table.Column{
-		{Title: "SERVICE", Width: fixed["SERVICE"]},
-		{Title: "STATE", Width: fixed["STATE"]},
-		{Title: "HEALTH", Width: fixed["HEALTH"]},
-		{Title: "PORTS", Width: ports},
-		{Title: "IMAGE", Width: rest - ports},
-		{Title: "UPTIME", Width: fixed["UPTIME"]},
+	for _, c := range []struct{ col, min int }{{4, 10}, {3, 9}, {0, 8}} {
+		if over <= 0 {
+			break
+		}
+		cut := min(over, widths[c.col]-c.min)
+		if cut > 0 {
+			widths[c.col] -= cut
+			over -= cut
+		}
 	}
+
+	// still too wide: trim the widest column until it fits, STATE last
+	for over > 0 {
+		widest := 4
+		for _, i := range []int{4, 3, 0, 5, 2, 1} {
+			if widths[i] > widths[widest] {
+				widest = i
+			}
+		}
+		if widths[widest] <= 3 {
+			break
+		}
+		widths[widest]--
+		over--
+	}
+
+	cols := make([]table.Column, len(columnTitles))
+	for i, t := range columnTitles {
+		cols[i] = table.Column{Title: t, Width: widths[i]}
+	}
+	return cols
 }
 
 func (m *Model) setTableStyles() {
@@ -902,7 +936,7 @@ func (m *Model) refreshTable() {
 // layout
 
 func (m Model) leftWidth() int {
-	return min(max(28, m.width*30/100), 48)
+	return min(max(28, m.width*26/100), 40)
 }
 
 func (m Model) bodyHeight() int {
@@ -931,7 +965,7 @@ func (m *Model) layout() {
 	inner := rightW - 4
 	sh := m.servicesHeight()
 
-	m.table.SetColumns(columns(inner))
+	m.table.SetColumns(columns(inner, m.table.Rows()))
 	m.table.SetWidth(inner)
 	m.table.SetHeight(max(sh-3, 2))
 

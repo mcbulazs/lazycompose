@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 )
@@ -286,5 +288,35 @@ func TestStateText(t *testing.T) {
 		if got := stateText(c); got != want {
 			t.Errorf("%+v: got %q, want %q", c, got, want)
 		}
+	}
+}
+
+func TestColumnsFitContent(t *testing.T) {
+	rows := []table.Row{{"app", "● running", "healthy", "8443->80/tcp", "nextcloud:30-apache", "2 minutes"}}
+
+	cols := columns(120, rows)
+	for i, c := range cols {
+		if c.Width < lipgloss.Width(rows[0][i]) {
+			t.Errorf("%s is %d wide, cell needs %d", c.Title, c.Width, lipgloss.Width(rows[0][i]))
+		}
+	}
+
+	// in a narrow pane IMAGE gives up space first
+	cols = columns(66, rows)
+	if cols[4].Width != 10 || cols[3].Width != lipgloss.Width(rows[0][3]) {
+		t.Errorf("IMAGE %d, PORTS %d; want IMAGE shrunk to 10 and PORTS untouched", cols[4].Width, cols[3].Width)
+	}
+
+	// and in a very narrow one the total still fits
+	cols = columns(60, rows)
+	total := 0
+	for _, c := range cols {
+		total += c.Width + 2
+	}
+	if total > 60 {
+		t.Errorf("columns take %d, want <= 60", total)
+	}
+	if cols[1].Width < lipgloss.Width("● running") {
+		t.Errorf("STATE should not shrink, got %d", cols[1].Width)
 	}
 }

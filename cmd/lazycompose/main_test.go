@@ -68,3 +68,25 @@ themes:
 		t.Fatalf("unexpected config %+v", cfg)
 	}
 }
+
+func TestLoadConfigEditor(t *testing.T) {
+	dir := t.TempDir()
+	tests := map[string]string{
+		"roots: [/srv]\n": "vim",
+		"editor: nano\n":  "nano",
+		"editor: \"\"\n":  "",
+	}
+	for data, want := range tests {
+		path := filepath.Join(dir, "config.yaml")
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := loadConfig(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if *cfg.Editor != want {
+			t.Errorf("%q: editor %q, want %q", data, *cfg.Editor, want)
+		}
+	}
+}

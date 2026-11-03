@@ -78,7 +78,7 @@ colors:
 | --- | --- | --- |
 | `roots` | your home folder | Folders to scan for compose files. |
 | `max_depth` | `0` | How many folders deep to look. `0` means no limit. |
-| `editor` | | Editor for `e`, e.g. `nvim` or `code --wait`. Empty uses `$VISUAL`, then `$EDITOR`, then nvim or vi. |
+| `editor` | `vim` | Editor for `e`, e.g. `nvim` or `code --wait`. Set it to `""` to use `$VISUAL`, then `$EDITOR`, then nvim or vi. |
 | `theme` | `terminal` | A built-in theme or one of your own. |
 | `themes` | | Your own themes, see below. |
 | `colors` | | Change single colours of the active theme. |

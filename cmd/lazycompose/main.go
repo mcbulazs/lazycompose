@@ -24,6 +24,23 @@ type config struct {
 	Theme    string                       `yaml:"theme"`
 	Themes   map[string]map[string]string `yaml:"themes"`
 	Colors   map[string]string            `yaml:"colors"`
+	Keys     map[string]keyList           `yaml:"keys"`
+}
+
+// keyList is one key ("r") or a list of keys ([r, ctrl+r]).
+type keyList []string
+
+func (k *keyList) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode {
+		*k = keyList{n.Value}
+		return nil
+	}
+	var list []string
+	if err := n.Decode(&list); err != nil {
+		return err
+	}
+	*k = list
+	return nil
 }
 
 type rootsFlag []string
@@ -103,6 +120,24 @@ theme: terminal
 # Change single colours of whichever theme is active, using the same keys.
 # colors:
 #   focus: "#7aa2f7"
+
+# Key bindings. Give an action one key or a list of keys, or [] to turn it
+# off. ctrl+c, esc and enter cannot be rebound. Actions and their defaults:
+#
+#   move_up: [k, up]          move_down: [j, down]
+#   next_pane: tab            prev_pane: shift+tab
+#   focus_environments: "1"   focus_services: "2"     focus_logs: "3"
+#   filter: /                 problems: "!"
+#   edit: e                   edit_env: E
+#   up: u                     down: d                 stop_start: s
+#   restart: r                recreate: R
+#   pull: p                   update_all: U
+#   logs: l                   shell: x                folder_shell: X
+#   refresh: ctrl+r           help: "?"               quit: q
+#
+# keys:
+#   recreate: F
+#   quit: [q, Q]
 `
 
 func loadConfig(path string) (config, error) {
@@ -143,6 +178,7 @@ func loadConfig(path string) (config, error) {
 	}
 	cfg.Themes = file.Themes
 	cfg.Colors = file.Colors
+	cfg.Keys = file.Keys
 	return cfg, nil
 }
 
@@ -200,6 +236,14 @@ func main() {
 	}
 	th, err := ui.LoadTheme(cfg.Theme, cfg.Themes, cfg.Colors)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "lazycompose:", err)
+		os.Exit(1)
+	}
+	overrides := map[string][]string{}
+	for name, ks := range cfg.Keys {
+		overrides[name] = ks
+	}
+	if err := ui.SetKeys(overrides); err != nil {
 		fmt.Fprintln(os.Stderr, "lazycompose:", err)
 		os.Exit(1)
 	}

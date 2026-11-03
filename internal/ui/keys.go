@@ -1,50 +1,182 @@
 package ui
 
-import "github.com/charmbracelet/bubbles/key"
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
+)
+
+// The rule for the defaults: a lowercase key acts on the selection, its
+// capital is the stronger version (r restart, R force recreate).
 
 type keyMap struct {
-	Up, Down, Tab, Filter      key.Binding
-	Edit, Start, Stop, Restart key.Binding
-	Pull, Logs, Shell, Refresh key.Binding
-	UpdateAll, Problems        key.Binding
-	Folder, Toggle, EditEnv    key.Binding
-	Recreate                   key.Binding
-	Help, Quit                 key.Binding
+	MoveUp, MoveDown, NextPane, PrevPane     key.Binding
+	FocusEnvs, FocusServices, FocusLogs      key.Binding
+	Filter, Problems                         key.Binding
+	Edit, EditEnv                            key.Binding
+	Start, Stop, Restart, Recreate, Toggle   key.Binding
+	Pull, UpdateAll                          key.Binding
+	Logs, Shell, Folder, Refresh, Help, Quit key.Binding
 }
 
-var keys = keyMap{
-	Up:        key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
-	Down:      key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
-	Tab:       key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "switch pane")),
-	Filter:    key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "filter")),
-	Edit:      key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
-	Start:     key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "up -d")),
-	Stop:      key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "down")),
-	Restart:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "restart")),
-	Pull:      key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "pull")),
-	Logs:      key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "logs")),
-	Shell:     key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "shell")),
-	UpdateAll: key.NewBinding(key.WithKeys("U"), key.WithHelp("U", "update all")),
-	Problems:  key.NewBinding(key.WithKeys("!"), key.WithHelp("!", "problems only")),
-	Folder:    key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "shell in folder")),
-	Toggle:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "stop/start service")),
-	EditEnv:   key.NewBinding(key.WithKeys("E"), key.WithHelp("E", "edit env file")),
-	Recreate:  key.NewBinding(key.WithKeys("F"), key.WithHelp("F", "force recreate")),
-	Refresh:   key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "refresh")),
-	Help:      key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-	Quit:      key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+// action is a key binding as it is named in the config file.
+type action struct {
+	name string
+	keys []string
+	help string
+	get  func(*keyMap) *key.Binding
+}
+
+var actions = []action{
+	{"move_up", []string{"k", "up"}, "up", func(k *keyMap) *key.Binding { return &k.MoveUp }},
+	{"move_down", []string{"j", "down"}, "down", func(k *keyMap) *key.Binding { return &k.MoveDown }},
+	{"next_pane", []string{"tab"}, "next pane", func(k *keyMap) *key.Binding { return &k.NextPane }},
+	{"prev_pane", []string{"shift+tab"}, "previous pane", func(k *keyMap) *key.Binding { return &k.PrevPane }},
+	{"focus_environments", []string{"1"}, "environments", func(k *keyMap) *key.Binding { return &k.FocusEnvs }},
+	{"focus_services", []string{"2"}, "services", func(k *keyMap) *key.Binding { return &k.FocusServices }},
+	{"focus_logs", []string{"3"}, "logs", func(k *keyMap) *key.Binding { return &k.FocusLogs }},
+	{"filter", []string{"/"}, "filter / search", func(k *keyMap) *key.Binding { return &k.Filter }},
+	{"problems", []string{"!"}, "problems only", func(k *keyMap) *key.Binding { return &k.Problems }},
+	{"edit", []string{"e"}, "edit", func(k *keyMap) *key.Binding { return &k.Edit }},
+	{"edit_env", []string{"E"}, "edit env file", func(k *keyMap) *key.Binding { return &k.EditEnv }},
+	{"up", []string{"u"}, "up -d", func(k *keyMap) *key.Binding { return &k.Start }},
+	{"down", []string{"d"}, "down", func(k *keyMap) *key.Binding { return &k.Stop }},
+	{"restart", []string{"r"}, "restart", func(k *keyMap) *key.Binding { return &k.Restart }},
+	{"recreate", []string{"R"}, "force recreate", func(k *keyMap) *key.Binding { return &k.Recreate }},
+	{"stop_start", []string{"s"}, "stop/start service", func(k *keyMap) *key.Binding { return &k.Toggle }},
+	{"pull", []string{"p"}, "pull", func(k *keyMap) *key.Binding { return &k.Pull }},
+	{"update_all", []string{"U"}, "update all", func(k *keyMap) *key.Binding { return &k.UpdateAll }},
+	{"logs", []string{"l"}, "fetch logs", func(k *keyMap) *key.Binding { return &k.Logs }},
+	{"shell", []string{"x"}, "shell", func(k *keyMap) *key.Binding { return &k.Shell }},
+	{"folder_shell", []string{"X"}, "shell in folder", func(k *keyMap) *key.Binding { return &k.Folder }},
+	{"refresh", []string{"ctrl+r"}, "refresh", func(k *keyMap) *key.Binding { return &k.Refresh }},
+	{"help", []string{"?"}, "help", func(k *keyMap) *key.Binding { return &k.Help }},
+	{"quit", []string{"q"}, "quit", func(k *keyMap) *key.Binding { return &k.Quit }},
+}
+
+// fixedKeys keep their meaning wherever they apply, so they cannot be bound.
+var fixedKeys = map[string]string{
+	"ctrl+c": "always quits",
+	"esc":    "cancels and clears",
+	"enter":  "confirms input",
+}
+
+// ActionNames lists the actions that can be set under keys in the config.
+func ActionNames() []string {
+	names := make([]string, len(actions))
+	for i, a := range actions {
+		names[i] = a.name
+	}
+	return names
+}
+
+// DefaultKeys returns the default keys of an action.
+func DefaultKeys(name string) []string {
+	for _, a := range actions {
+		if a.name == name {
+			return a.keys
+		}
+	}
+	return nil
+}
+
+var keys = mustKeys(nil)
+
+func mustKeys(overrides map[string][]string) keyMap {
+	k, err := buildKeys(overrides)
+	if err != nil {
+		panic(err)
+	}
+	return k
+}
+
+// SetKeys applies key overrides from the config on top of the defaults.
+func SetKeys(overrides map[string][]string) error {
+	k, err := buildKeys(overrides)
+	if err != nil {
+		return err
+	}
+	keys = k
+	return nil
+}
+
+func buildKeys(overrides map[string][]string) (keyMap, error) {
+	var km keyMap
+	byName := map[string]action{}
+	for _, a := range actions {
+		byName[a.name] = a
+		*a.get(&km) = key.NewBinding(key.WithKeys(a.keys...), key.WithHelp(keyLabel(a.keys), a.help))
+	}
+
+	for _, name := range sortedKeys(overrides) {
+		a, ok := byName[name]
+		if !ok {
+			return km, fmt.Errorf("keys.%s: unknown action, use one of: %s", name, strings.Join(ActionNames(), ", "))
+		}
+		ks := overrides[name]
+		b := a.get(&km)
+		if len(ks) == 0 {
+			b.SetEnabled(false) // an empty list unbinds the action
+			continue
+		}
+		for _, k := range ks {
+			if why, fixed := fixedKeys[k]; fixed {
+				return km, fmt.Errorf("keys.%s: %q cannot be bound, it %s", name, k, why)
+			}
+		}
+		b.SetKeys(ks...)
+		b.SetHelp(keyLabel(ks), a.help)
+	}
+
+	// one key, one action
+	owner := map[string]string{}
+	var clashes []string
+	for _, a := range actions {
+		b := a.get(&km)
+		if !b.Enabled() {
+			continue
+		}
+		for _, k := range b.Keys() {
+			if other, taken := owner[k]; taken {
+				clashes = append(clashes, fmt.Sprintf("%q is bound to both %s and %s", k, other, a.name))
+				continue
+			}
+			owner[k] = a.name
+		}
+	}
+	if len(clashes) > 0 {
+		sort.Strings(clashes)
+		return km, fmt.Errorf("keys: %s", strings.Join(clashes, "; "))
+	}
+	return km, nil
+}
+
+var arrows = strings.NewReplacer("up", "↑", "down", "↓", "left", "←", "right", "→")
+
+// keyLabel is how keys are shown in the help, with arrows for arrow keys.
+func keyLabel(ks []string) string {
+	out := make([]string, len(ks))
+	for i, k := range ks {
+		out[i] = k
+		if k == "up" || k == "down" || k == "left" || k == "right" {
+			out[i] = arrows.Replace(k)
+		}
+	}
+	return strings.Join(out, "/")
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Tab, k.Filter, k.Edit, k.Start, k.Stop, k.Restart, k.Pull, k.Logs, k.Shell, k.Help, k.Quit}
+	return []key.Binding{k.NextPane, k.Filter, k.Edit, k.Start, k.Stop, k.Restart, k.Pull, k.Logs, k.Shell, k.Help, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Tab, k.Filter, k.Problems},
-		{k.Edit, k.EditEnv, k.Start, k.Stop, k.Restart},
-		{k.Toggle, k.Recreate, k.Pull, k.UpdateAll},
-		{k.Logs, k.Shell, k.Folder},
-		{k.Refresh, k.Help, k.Quit},
+		{k.MoveUp, k.MoveDown, k.NextPane, k.FocusEnvs, k.FocusServices, k.FocusLogs},
+		{k.Filter, k.Problems, k.Edit, k.EditEnv, k.Refresh},
+		{k.Start, k.Stop, k.Restart, k.Recreate, k.Toggle},
+		{k.Pull, k.UpdateAll, k.Logs, k.Shell, k.Folder},
+		{k.Help, k.Quit},
 	}
 }

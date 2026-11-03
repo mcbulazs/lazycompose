@@ -4,8 +4,44 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/mcbulazs/lazycompose/internal/ui"
 )
+
+// every action and its defaults must appear in the commented config
+func TestDefaultConfigListsEveryAction(t *testing.T) {
+	for _, name := range ui.ActionNames() {
+		defaults := ui.DefaultKeys(name)
+		want := defaults[0]
+		if len(defaults) > 1 {
+			want = "[" + strings.Join(defaults, ", ") + "]"
+		}
+		if !strings.Contains(defaultConfig, " "+name+": "+want) &&
+			!strings.Contains(defaultConfig, " "+name+": \""+want+"\"") {
+			t.Errorf("default config does not list %s: %s", name, want)
+		}
+	}
+}
+
+func TestLoadConfigKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := "keys:\n  recreate: F\n  quit: [q, Q]\n  refresh: []\n"
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(cfg.Keys["recreate"], ",") != "F" || strings.Join(cfg.Keys["quit"], ",") != "q,Q" {
+		t.Errorf("keys %v", cfg.Keys)
+	}
+	if ks, ok := cfg.Keys["refresh"]; !ok || len(ks) != 0 {
+		t.Errorf("refresh should be an empty list, got %v (present %v)", ks, ok)
+	}
+}
 
 func TestLoadConfigCreatesDefault(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lazycompose", "config.yaml")

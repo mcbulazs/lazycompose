@@ -3,6 +3,7 @@ package ui
 import (
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 )
@@ -124,12 +125,15 @@ func (m *Model) releaseOutput(msg tea.KeyMsg) {
 	if !m.holdOutput || len(m.actions) > 0 || m.updating != nil || m.confirm != nil {
 		return
 	}
-	if k := msg.String(); k == "tab" || k == "shift+tab" {
+	if key.Matches(msg, keys.NextPane, keys.PrevPane, keys.FocusEnvs, keys.FocusServices, keys.FocusLogs) {
 		return
 	}
 	if m.focus == focusLogs {
+		if key.Matches(msg, keys.MoveUp, keys.MoveDown, keys.Filter) {
+			return
+		}
 		switch msg.String() {
-		case "j", "k", "up", "down", "pgup", "pgdown", "g", "G", "/", "n", "N":
+		case "pgup", "pgdown", "g", "G", "n", "N":
 			return
 		}
 	}

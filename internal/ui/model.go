@@ -661,18 +661,25 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, nil
 
-	case key.Matches(msg, keys.Tab):
-		if msg.String() == "shift+tab" {
-			m.focus = (m.focus + 2) % 3
-		} else {
+	case key.Matches(msg, keys.NextPane, keys.PrevPane, keys.FocusEnvs, keys.FocusServices, keys.FocusLogs):
+		switch {
+		case key.Matches(msg, keys.NextPane):
 			m.focus = (m.focus + 1) % 3
+		case key.Matches(msg, keys.PrevPane):
+			m.focus = (m.focus + 2) % 3
+		case key.Matches(msg, keys.FocusEnvs):
+			m.focus = focusEnvs
+		case key.Matches(msg, keys.FocusServices):
+			m.focus = focusServices
+		case key.Matches(msg, keys.FocusLogs):
+			m.focus = focusLogs
 		}
 		m.setTableStyles()
 		return m, nil
 
-	case key.Matches(msg, keys.Up), key.Matches(msg, keys.Down):
+	case key.Matches(msg, keys.MoveUp, keys.MoveDown):
 		n := 1
-		if key.Matches(msg, keys.Up) {
+		if key.Matches(msg, keys.MoveUp) {
 			n = -1
 		}
 		switch m.focus {

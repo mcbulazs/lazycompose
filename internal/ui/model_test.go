@@ -488,7 +488,7 @@ func TestHighlight(t *testing.T) {
 
 func TestForceRecreate(t *testing.T) {
 	m := newTestModel(t)
-	m = send(m, press("F")...)
+	m = send(m, press("R")...)
 	if m.confirm == nil || m.confirm.prompt != "Force recreate plex? (y/n)" {
 		t.Fatalf("env prompt %+v", m.confirm)
 	}
@@ -503,7 +503,7 @@ func TestForceRecreate(t *testing.T) {
 		servicesMsg{services: map[string][]string{"/srv/plex": {"plex"}}},
 		psMsg{dir: "/srv/plex"},
 	)
-	m = send(m, press("tab", "F")...)
+	m = send(m, press("tab", "R")...)
 	if m.confirm == nil || m.confirm.prompt != "Force recreate plex plex? (y/n)" {
 		t.Errorf("service prompt %+v", m.confirm)
 	}

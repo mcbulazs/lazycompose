@@ -155,29 +155,51 @@ Flags override the config:
 
 ## Keys
 
-| Key | Action |
-| --- | --- |
-| `tab` / `shift+tab` | Switch pane (environments, services, logs) |
-| `j` `k` / arrows | Move, or scroll the log pane |
-| `/` | Filter environments, `enter` to keep, `esc` to clear |
-| `!` | Show only environments with problems, `esc` to show all |
-| `e` | Edit the compose file (see `editor` in the config) |
-| `E` | Edit the environment's `.env` file, created if it does not exist yet |
-| `u` | `docker compose up -d` |
-| `d` | `docker compose down` (asks first) |
-| `r` | `docker compose restart` |
-| `p` | `docker compose pull` |
-| `F` | Force recreate: `docker compose up -d --force-recreate` (asks first) |
-| `U` | Update all running environments: `pull`, then `up -d`, one at a time (asks first, `esc` stops after the current one) |
-| `l` | Fetch the logs again |
-| `s` | Stop the selected service, or start it if it is not running |
-| `x` | Open a shell in the selected service (bash if it has it, otherwise sh) |
-| `o` | Open your shell (`$SHELL`) in the environment's folder; `exit` to come back |
-| `/` in the log pane | Search the logs; `n` older match, `N` newer match, `esc` clears |
-| `G` / `g` | Jump to the bottom / top of the log pane |
-| `R` | Refresh and rescan folders |
-| `?` | Show all keys |
-| `q` | Quit |
+Lowercase keys act on the selection; the capital of the same letter is the
+stronger version (`r` restart, `R` force recreate).
+
+| Key | Action | Name in config |
+| --- | --- | --- |
+| `tab` / `shift+tab` | Next / previous pane | `next_pane`, `prev_pane` |
+| `1` `2` `3` | Jump to environments, services, logs | `focus_environments`, `focus_services`, `focus_logs` |
+| `j` `k` / arrows | Move, or scroll the log pane | `move_down`, `move_up` |
+| `/` | Filter environments; in the log pane, search the logs | `filter` |
+| `!` | Show only environments with problems | `problems` |
+| `e` | Edit the compose file (see `editor` in the config) | `edit` |
+| `E` | Edit the environment's `.env` file, created if it does not exist yet | `edit_env` |
+| `u` | `docker compose up -d` | `up` |
+| `d` | `docker compose down` (asks first) | `down` |
+| `s` | Stop the selected service, or start it if it is not running | `stop_start` |
+| `r` | `docker compose restart` | `restart` |
+| `R` | `docker compose up -d --force-recreate` (asks first) | `recreate` |
+| `p` | `docker compose pull` | `pull` |
+| `U` | Update all running environments: `pull`, then `up -d`, one at a time (asks first) | `update_all` |
+| `l` | Fetch the logs again | `logs` |
+| `x` | Open a shell in the selected service (bash if it has it, otherwise sh) | `shell` |
+| `X` | Open your shell (`$SHELL`) in the environment's folder; `exit` to come back | `folder_shell` |
+| `ctrl+r` | Refresh and rescan folders | `refresh` |
+| `?` | Show all keys | `help` |
+| `q` | Quit | `quit` |
+
+These keys are fixed: `ctrl+c` always quits, `esc` cancels or clears (a
+filter, a search, a running update all), `enter` confirms input, `y` / `n`
+answer questions, and in the log pane `n` / `N` jump to the older / newer
+search match, `g` / `G` to the top / bottom and page up / down scroll.
+
+### Custom keys
+
+Rebind any action under `keys` in the config, with one key or a list.
+An empty list turns the action off:
+
+```yaml
+keys:
+  recreate: F
+  quit: [q, Q]
+  refresh: []
+```
+
+A key used by two actions, or an unknown action name, is reported when
+lazycompose starts.
 
 The mouse works too: the wheel scrolls the pane under the pointer and a click
 selects an environment or service.
@@ -187,7 +209,7 @@ the services pane is focused. While a command like `up -d` or `pull` runs, the
 pane shows its output live instead, and keeps it after the command finishes
 until you press a key.
 
-`u`, `r`, `p`, `F` and `l` act on the whole environment, or on the selected
+`u`, `r`, `R`, `p` and `l` act on the whole environment, or on the selected
 service when the services pane is focused.
 
 After editing, lazycompose runs `docker compose config -q`. If the file is

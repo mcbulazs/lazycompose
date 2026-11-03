@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,7 @@ type (
 	}
 	editorMsg struct {
 		env    discover.Env
+		file   string
 		before [32]byte
 		err    error
 	}
@@ -159,16 +161,20 @@ func editorCommand(editor, file string) (*exec.Cmd, error) {
 	return nil, errors.New("no editor found, set editor in the config or $EDITOR")
 }
 
-func openEditor(editor string, e discover.Env) tea.Cmd {
-	cmd, err := editorCommand(editor, e.File)
+// openEditor edits a file of the environment: its compose file or env file.
+func openEditor(editor string, e discover.Env, file string) tea.Cmd {
+	cmd, err := editorCommand(editor, file)
 	if err != nil {
-		return func() tea.Msg { return editorMsg{env: e, err: err} }
+		return func() tea.Msg { return editorMsg{env: e, file: file, err: err} }
 	}
-	before := hashFile(e.File)
+	before := hashFile(file)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return editorMsg{env: e, before: before, err: err}
+		return editorMsg{env: e, file: file, before: before, err: err}
 	})
 }
+
+// envFile is the file docker compose reads variables from by default.
+func envFile(e discover.Env) string { return filepath.Join(e.Dir, ".env") }
 
 // shells are tried in this order
 var shells = []string{"bash", "sh"}

@@ -448,7 +448,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus("editor: "+msg.err.Error(), true)
 			return m, nil
 		}
-		if hashFile(msg.env.File) == msg.before {
+		if hashFile(msg.file) == msg.before {
 			m.setStatus("no changes", false)
 			return m, nil
 		}
@@ -724,7 +724,10 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, keys.Edit):
-		return m, openEditor(m.opts.Editor, e)
+		return m, openEditor(m.opts.Editor, e, e.File)
+
+	case key.Matches(msg, keys.EditEnv):
+		return m, openEditor(m.opts.Editor, e, envFile(e))
 
 	case key.Matches(msg, keys.Start):
 		a := args("up", "-d")

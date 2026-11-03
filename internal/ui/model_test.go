@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -369,6 +371,40 @@ func TestMouse(t *testing.T) {
 	m = send(m, click(m.leftWidth()+5, m.servicesHeight()+3))
 	if m.focus != focusLogs {
 		t.Errorf("click below the services pane should focus logs, got %v", m.focus)
+	}
+}
+
+func TestEditorResult(t *testing.T) {
+	m := newTestModel(t)
+	file := filepath.Join(t.TempDir(), "vars")
+	if err := os.WriteFile(file, []byte("A=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := hashFile(file)
+
+	m = send(m, editorMsg{env: env("plex"), file: file, before: before})
+	if m.status != "no changes" || m.busy != 0 {
+		t.Errorf("unchanged file: status %q, busy %d", m.status, m.busy)
+	}
+
+	if err := os.WriteFile(file, []byte("A=2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m = send(m, editorMsg{env: env("plex"), file: file, before: before})
+	if m.busy != 1 || !strings.Contains(m.status, "validating plex") {
+		t.Errorf("changed file should be validated: status %q, busy %d", m.status, m.busy)
+	}
+
+	// a valid config asks before applying
+	m = send(m, validateMsg{env: env("plex")})
+	if m.confirm == nil || m.confirm.prompt != "Apply changes? (y = up -d / n)" {
+		t.Errorf("expected apply prompt, got %+v", m.confirm)
+	}
+}
+
+func TestEnvFilePath(t *testing.T) {
+	if got := envFile(env("web/blog")); got != filepath.Join("/srv/web/blog", "."+"env") {
+		t.Errorf("got %q", got)
 	}
 }
 

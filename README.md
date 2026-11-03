@@ -162,6 +162,7 @@ Flags override the config:
 | `/` | Filter environments, `enter` to keep, `esc` to clear |
 | `!` | Show only environments with problems, `esc` to show all |
 | `e` | Edit the compose file (see `editor` in the config) |
+| `E` | Edit the environment's `.env` file, created if it does not exist yet |
 | `u` | `docker compose up -d` |
 | `d` | `docker compose down` (asks first) |
 | `r` | `docker compose restart` |

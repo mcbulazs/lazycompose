@@ -1,5 +1,7 @@
 # lazycompose
 
+[![ci](https://github.com/mcbulazs/lazycompose/actions/workflows/ci.yml/badge.svg)](https://github.com/mcbulazs/lazycompose/actions/workflows/ci.yml)
+
 A terminal UI for managing Docker Compose stacks on a server. It scans
 your app folders for compose files, shows what is running, and lets you start,
 stop, restart, pull, edit and tail logs without leaving the terminal.
@@ -46,6 +48,9 @@ machine. Install it somewhere on your `PATH`:
 ```sh
 sudo install -m 755 bin/lazycompose /usr/local/bin/lazycompose
 ```
+
+To stamp a release version into the binary, add
+`-X main.version=v0.1.0` to `-ldflags`. Check it with `lazycompose -version`.
 
 Run the tests:
 
@@ -123,6 +128,7 @@ Flags override the config:
 | `-max-depth N` | How many folders deep to look, `0` for no limit. |
 | `-theme NAME` | Colour theme. |
 | `-config FILE` | Use a different config file. |
+| `-version` | Print the version and exit. |
 
 ## Keys
 
@@ -151,3 +157,7 @@ valid it asks whether to apply the changes with `up -d`; if not, the error is
 shown in the log pane.
 
 Status refreshes every 3 seconds.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

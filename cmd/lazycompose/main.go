@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -137,13 +138,33 @@ func expandHome(p string) string {
 	return p
 }
 
+// version can be set at build time with -ldflags "-X main.version=v1.0.0".
+var version string
+
+func versionString() string {
+	if version != "" {
+		return version
+	}
+	// go build stamps a version from git, go install from the module tag
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return "dev"
+}
+
 func main() {
 	var roots rootsFlag
 	configPath := flag.String("config", defaultConfigPath(), "config file")
 	depth := flag.Int("max-depth", -1, "how deep to look for compose files, 0 for no limit (overrides config)")
 	theme := flag.String("theme", "", "colour theme: "+strings.Join(ui.ThemeNames(), ", ")+" (overrides config)")
 	flag.Var(&roots, "root", "folder to scan, can be repeated or comma separated (overrides config)")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("lazycompose", versionString())
+		return
+	}
 
 	cfg, err := loadConfig(*configPath)
 	if err != nil {

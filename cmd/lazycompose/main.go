@@ -19,6 +19,7 @@ import (
 type config struct {
 	Roots    []string                     `yaml:"roots"`
 	MaxDepth int                          `yaml:"max_depth"`
+	Editor   string                       `yaml:"editor"`
 	Theme    string                       `yaml:"theme"`
 	Themes   map[string]map[string]string `yaml:"themes"`
 	Colors   map[string]string            `yaml:"colors"`
@@ -61,6 +62,11 @@ roots:
 # Hidden folders, node_modules, vendor, testdata and the Go module cache are
 # always skipped, and folders inside an environment are not scanned.
 max_depth: 0
+
+# Editor for the e key. Leave empty to use $VISUAL, then $EDITOR, then
+# nvim or vi. It can include arguments; graphical editors need a flag that
+# waits until the file is closed, like "code --wait".
+editor: ""
 
 # Colour theme. Built in: terminal, onedark, tokyonight, catppuccin, gruvbox
 # and nord. "terminal" uses your terminal's own colours; the others use fixed
@@ -123,6 +129,7 @@ func loadConfig(path string) (config, error) {
 	if file.Theme != "" {
 		cfg.Theme = file.Theme
 	}
+	cfg.Editor = file.Editor
 	cfg.Themes = file.Themes
 	cfg.Colors = file.Colors
 	return cfg, nil
@@ -208,6 +215,7 @@ func main() {
 		Roots:    cfg.Roots,
 		Find:     find,
 		Theme:    th,
+		Editor:   cfg.Editor,
 	})
 
 	// paint the terminal background while running

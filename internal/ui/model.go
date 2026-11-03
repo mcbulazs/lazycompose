@@ -34,6 +34,7 @@ type Options struct {
 	Envs     []discover.Env
 	Find     func() ([]discover.Env, error)
 	Theme    Theme
+	Editor   string
 }
 
 type confirm struct {
@@ -600,7 +601,7 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, keys.Edit):
-		return m, openEditor(e)
+		return m, openEditor(m.opts.Editor, e)
 
 	case key.Matches(msg, keys.Start):
 		a := args("up", "-d")

@@ -68,6 +68,7 @@ roots:
   - /srv/stacks
   - ~/projects
 max_depth: 0
+editor: nvim
 theme: terminal
 colors:
   focus: "#7aa2f7"
@@ -77,6 +78,7 @@ colors:
 | --- | --- | --- |
 | `roots` | your home folder | Folders to scan for compose files. |
 | `max_depth` | `0` | How many folders deep to look. `0` means no limit. |
+| `editor` | | Editor for `e`, e.g. `nvim` or `code --wait`. Empty uses `$VISUAL`, then `$EDITOR`, then nvim or vi. |
 | `theme` | `terminal` | A built-in theme or one of your own. |
 | `themes` | | Your own themes, see below. |
 | `colors` | | Change single colours of the active theme. |
@@ -137,13 +139,13 @@ Flags override the config:
 | `tab` / `shift+tab` | Switch pane (environments, services, logs) |
 | `j` `k` / arrows | Move, or scroll the log pane |
 | `/` | Filter environments, `enter` to keep, `esc` to clear |
-| `e` | Edit the compose file in `$EDITOR` (falls back to nvim, then vi) |
+| `e` | Edit the compose file (see `editor` in the config) |
 | `u` | `docker compose up -d` |
 | `d` | `docker compose down` (asks first) |
 | `r` | `docker compose restart` |
 | `p` | `docker compose pull` |
 | `l` | Follow logs |
-| `x` | Open a shell in the selected service (`exec <svc> sh`) |
+| `x` | Open a shell in the selected service (bash if it has it, otherwise sh) |
 | `esc` | Stop following logs |
 | `R` | Refresh and rescan folders |
 | `?` | Show all keys |

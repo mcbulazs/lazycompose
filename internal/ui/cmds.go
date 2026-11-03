@@ -144,20 +144,25 @@ func hashFile(path string) [32]byte {
 	return sha256.Sum256(b)
 }
 
-func editorCommand(file string) (*exec.Cmd, error) {
-	if parts := strings.Fields(os.Getenv("EDITOR")); len(parts) > 0 {
-		return exec.Command(parts[0], append(parts[1:], file)...), nil
+// editorCommand uses the configured editor, then $VISUAL, then $EDITOR,
+// then the first of nvim or vi that is installed. The editor may include
+// arguments, like "code --wait".
+func editorCommand(editor, file string) (*exec.Cmd, error) {
+	for _, e := range []string{editor, os.Getenv("VISUAL"), os.Getenv("EDITOR")} {
+		if parts := strings.Fields(e); len(parts) > 0 {
+			return exec.Command(parts[0], append(parts[1:], file)...), nil
+		}
 	}
 	for _, name := range []string{"nvim", "vi"} {
 		if p, err := exec.LookPath(name); err == nil {
 			return exec.Command(p, file), nil
 		}
 	}
-	return nil, errors.New("no editor found, set $EDITOR")
+	return nil, errors.New("no editor found, set editor in the config or $EDITOR")
 }
 
-func openEditor(e discover.Env) tea.Cmd {
-	cmd, err := editorCommand(e.File)
+func openEditor(editor string, e discover.Env) tea.Cmd {
+	cmd, err := editorCommand(editor, e.File)
 	if err != nil {
 		return func() tea.Msg { return editorMsg{env: e, err: err} }
 	}

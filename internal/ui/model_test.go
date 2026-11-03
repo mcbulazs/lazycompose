@@ -508,3 +508,91 @@ func TestForceRecreate(t *testing.T) {
 		t.Errorf("service prompt %+v", m.confirm)
 	}
 }
+
+func TestLogsFollowSelection(t *testing.T) {
+	m := newTestModel(t) // the resize already scheduled plex
+	if m.pendingLogs != (logTarget{dir: "/srv/plex"}) {
+		t.Fatalf("pending %+v", m.pendingLogs)
+	}
+	first := m.autoID
+
+	// moving on before the selection settles replaces the pending fetch
+	m = send(m, press("down")...)
+	if m.pendingLogs.dir != "/srv/games/mc" || m.autoID == first {
+		t.Fatalf("pending %+v after moving", m.pendingLogs)
+	}
+	m = send(m, autoLogsMsg{id: first})
+	if m.stream != nil {
+		t.Fatal("a stale fetch should be ignored")
+	}
+
+	m = send(m, autoLogsMsg{id: m.autoID})
+	if m.stream == nil || m.logTarget.dir != "/srv/games/mc" || m.logTitle != "Logs · games/mc" {
+		t.Fatalf("stream %v, target %+v, title %q", m.stream, m.logTarget, m.logTitle)
+	}
+
+	// in the services pane the selected service is followed
+	m = send(m,
+		servicesMsg{services: map[string][]string{"/srv/games/mc": {"backup", "mc"}}},
+		psMsg{dir: "/srv/games/mc"},
+	)
+	m = send(m, press("tab")...)
+	m = send(m, autoLogsMsg{id: m.autoID})
+	if m.logTarget.service != "backup" {
+		t.Fatalf("target %+v, want the backup service", m.logTarget)
+	}
+
+	// focusing the log pane keeps what it shows
+	m = send(m, press("tab")...)
+	if m.pendingLogs != (logTarget{}) {
+		t.Errorf("focusing logs should not refetch, pending %+v", m.pendingLogs)
+	}
+}
+
+func TestCommandOutputIsHeld(t *testing.T) {
+	m := newTestModel(t)
+	m = send(m, press("u")...)
+	if !m.holdOutput || m.logTitle != "Output" || len(m.actions) != 1 || m.busy != 1 {
+		t.Fatalf("hold %v, title %q, actions %d, busy %d", m.holdOutput, m.logTitle, len(m.actions), m.busy)
+	}
+	var id int
+	for id = range m.actions {
+	}
+
+	m = send(m, logLinesMsg{id: id, lines: []string{" Container plex-1 Started"}})
+	if !strings.Contains(strings.Join(m.logLines, "\n"), "plex-1 Started") {
+		t.Errorf("output not shown: %v", m.logLines)
+	}
+
+	// a key while the command runs keeps the output
+	m = send(m, press("j")...)
+	if !m.holdOutput {
+		t.Fatal("output should stay while the command runs")
+	}
+
+	m = send(m, logDoneMsg{id: id})
+	if m.busy != 0 || len(m.actions) != 0 || !m.holdOutput {
+		t.Fatalf("busy %d, actions %d, hold %v", m.busy, len(m.actions), m.holdOutput)
+	}
+	if m.status != "docker compose up -d (plex) done" {
+		t.Errorf("status %q", m.status)
+	}
+
+	// scrolling the log pane keeps it too
+	m = send(m, press("tab", "tab")...)
+	held := m.holdOutput
+	m = send(m, press("k")...)
+	if !m.holdOutput || !held {
+		t.Fatal("scrolling the output should not release it")
+	}
+
+	// switching panes keeps it, any other key goes back to the logs
+	m = send(m, press("tab")...)
+	if !m.holdOutput {
+		t.Fatal("tab should not release the output")
+	}
+	m = send(m, press("j")...)
+	if m.holdOutput || m.pendingLogs.dir == "" {
+		t.Errorf("hold %v, pending %+v", m.holdOutput, m.pendingLogs)
+	}
+}

@@ -35,11 +35,6 @@ type (
 		envs []discover.Env
 		err  error
 	}
-	actionMsg struct {
-		label  string
-		output string
-		err    error
-	}
 	editorMsg struct {
 		env    discover.Env
 		file   string
@@ -118,13 +113,6 @@ func rediscover(find func() ([]discover.Env, error)) tea.Cmd {
 	return func() tea.Msg {
 		envs, err := find()
 		return envsMsg{envs: envs, err: err}
-	}
-}
-
-func runAction(e discover.Env, label string, args ...string) tea.Cmd {
-	return func() tea.Msg {
-		out, err := project(e).Run(context.Background(), args...)
-		return actionMsg{label: label, output: out, err: err}
 	}
 }
 
@@ -229,34 +217,46 @@ func startLogs(id int, e discover.Env, service string) (*logStream, tea.Cmd) {
 	if service != "" {
 		args = append(args, service)
 	}
-	cmd := project(e).Command(ctx, args...)
+	return startStream(id, ctx, cancel, project(e).Command(ctx, args...))
+}
 
-	pr, pw := io.Pipe()
-	cmd.Stdout = pw
-	cmd.Stderr = pw
+// startAction runs a docker compose command and streams its output. It is
+// never cancelled: stopping an up or down halfway would do more harm.
+func startAction(id int, e discover.Env, args ...string) (*logStream, tea.Cmd) {
+	ctx, cancel := context.WithCancel(context.Background())
+	return startStream(id, ctx, cancel, project(e).Command(ctx, args...))
+}
 
+// startStream sends the stdout and stderr of cmd line by line. The process
+// starts when the returned command runs, not before.
+func startStream(id int, ctx context.Context, cancel context.CancelFunc, cmd *exec.Cmd) (*logStream, tea.Cmd) {
 	s := &logStream{id: id, cancel: cancel, lines: make(chan string, 512)}
-	if err := cmd.Start(); err != nil {
-		cancel()
-		return nil, func() tea.Msg { return logDoneMsg{id: id, err: err} }
+	start := func() tea.Msg {
+		pr, pw := io.Pipe()
+		cmd.Stdout = pw
+		cmd.Stderr = pw
+		if err := cmd.Start(); err != nil {
+			cancel()
+			return logDoneMsg{id: id, err: err}
+		}
+		go func() {
+			err := cmd.Wait()
+			pw.CloseWithError(err)
+		}()
+		go func() {
+			defer close(s.lines)
+			sc := bufio.NewScanner(pr)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			for sc.Scan() {
+				s.lines <- sc.Text()
+			}
+			if err := sc.Err(); err != nil && ctx.Err() == nil {
+				s.err = err
+			}
+		}()
+		return s.next()()
 	}
-
-	go func() {
-		err := cmd.Wait()
-		pw.CloseWithError(err)
-	}()
-	go func() {
-		defer close(s.lines)
-		sc := bufio.NewScanner(pr)
-		sc.Buffer(make([]byte, 64*1024), 1024*1024)
-		for sc.Scan() {
-			s.lines <- sc.Text()
-		}
-		if err := sc.Err(); err != nil && ctx.Err() == nil {
-			s.err = err
-		}
-	}()
-	return s, s.next()
+	return s, start
 }
 
 // next waits for at least one line, then drains whatever else is ready so

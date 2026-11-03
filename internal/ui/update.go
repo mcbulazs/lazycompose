@@ -35,6 +35,7 @@ func (m *Model) startUpdateAll() tea.Cmd {
 		prompt: fmt.Sprintf("Update %d running environments (pull + up -d)? (y/n)", len(queue)),
 		onYes: func(m *Model) tea.Cmd {
 			m.updating = &updateRun{queue: queue}
+			m.holdOutput = true
 			m.stopLogs()
 			m.logTitle = "Update all"
 			m.logLines = nil
@@ -80,6 +81,7 @@ func (m *Model) onUpdate(msg updateMsg) tea.Cmd {
 		summary += fmt.Sprintf(", %d skipped", skipped)
 	}
 	m.appendLog(dimStyle.Render(summary))
+	m.appendLog(dimStyle.Render("-- press any key to go back to the logs --"))
 	m.setStatus(summary, u.failed > 0)
 	m.updating = nil
 	return m.refreshNow()

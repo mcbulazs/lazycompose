@@ -61,6 +61,11 @@ type Model struct {
 	logs viewport.Model
 	// lineStart is the first wrapped row of each log line
 	lineStart   []int
+	logTarget   logTarget // what the log stream follows
+	pendingLogs logTarget // waiting for the selection to settle
+	autoID      int
+	holdOutput  bool // keep command output until a key is pressed
+	actions     map[int]*actionRun
 	search      logSearch
 	searching   bool
 	searchInput textinput.Model
@@ -189,8 +194,10 @@ func (m *Model) onSelect() tea.Cmd {
 	m.containers = nil
 	m.stats = nil
 	m.table.SetCursor(0)
-	m.stopLogs()
-	m.setLogPlaceholder()
+	if !m.holdOutput {
+		m.stopLogs()
+		m.setLogPlaceholder()
+	}
 	m.refreshTable()
 	m.loadingPS = true
 	return loadPS(e)
@@ -286,12 +293,13 @@ func (m *Model) setLogPlaceholder() {
 	m.search = logSearch{}
 	m.logTitle = "Logs"
 	m.logLines = nil
-	m.logs.SetContent(dimStyle.Render("press l to follow logs"))
+	m.logs.SetContent(dimStyle.Render("loading logs…"))
 }
 
 func (m *Model) stopLogs() {
 	m.stream.stop()
 	m.stream = nil
+	m.logTarget = logTarget{}
 }
 
 // target is the selected env and, when the services pane has focus, the
@@ -319,6 +327,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
 	nm := next.(Model)
 	nm.list.scroll(nm.listHeight())
+	if c := nm.scheduleLogs(); c != nil {
+		cmd = tea.Batch(cmd, c)
+	}
 	return nm, cmd
 }
 
@@ -384,6 +395,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.states = msg.states
+		// a log stream ends when its containers stop; pick it up again
+		// once they run
+		if m.stream == nil && !m.holdOutput && m.logTarget.dir != "" {
+			st := m.states[m.logTarget.dir]
+			svc := m.logTarget.service
+			if st != nil && st.Running > 0 && (svc == "" || st.Services[svc]) {
+				m.logTarget = logTarget{}
+			}
+		}
 		if m.problemsOnly {
 			m.applyProblemFilter()
 			return m, m.onSelect()
@@ -453,25 +473,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setStatus(fmt.Sprintf("found %d environments", len(msg.envs)), false)
 		return m, tea.Batch(loadServices(msg.envs), loadStates(), m.onSelect())
 
-	case actionMsg:
-		m.busy = max(0, m.busy-1)
-		if msg.err != nil {
-			m.setStatus(msg.label+" failed: "+firstLine(msg.err.Error()), true)
-		} else {
-			m.setStatus(msg.label+" done", false)
+	case autoLogsMsg:
+		if msg.id != m.autoID {
+			return m, nil
 		}
-		if m.stream == nil {
-			m.logTitle = "Output"
-			m.appendLog(dimStyle.Render("$ " + msg.label))
-			out := strings.TrimRight(msg.output, "\n")
-			if msg.err != nil && out == "" {
-				out = msg.err.Error()
-			}
-			if out != "" {
-				m.appendLog(strings.Split(out, "\n")...)
-			}
+		m.pendingLogs = logTarget{}
+		if m.holdOutput {
+			return m, nil
 		}
-		return m, m.refreshNow()
+		if e, svc, ok := m.wantedLogs(); ok {
+			return m, m.followLogs(e, svc)
+		}
+		return m, nil
 
 	case editorMsg:
 		if msg.err != nil {
@@ -490,6 +503,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.setStatus("docker compose config failed for "+e.Rel, true)
 			m.stopLogs()
+			m.holdOutput = true
 			m.logTitle = "Config error"
 			m.logLines = nil
 			m.logs.SetContent("")
@@ -500,8 +514,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirm = &confirm{
 			prompt: "Apply changes? (y = up -d / n)",
 			onYes: func(m *Model) tea.Cmd {
-				return tea.Batch(m.startBusy("up -d "+e.Rel),
-					runAction(e, "docker compose up -d ("+e.Rel+")", "up", "-d"))
+				return m.runAction(e, "up -d "+e.Rel, "docker compose up -d ("+e.Rel+")", "up", "-d")
 			},
 		}
 		return m, loadServices([]discover.Env{e})
@@ -532,6 +545,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.refreshNow()
 
 	case logLinesMsg:
+		if a, ok := m.actions[msg.id]; ok {
+			m.appendLog(msg.lines...)
+			return m, a.stream.next()
+		}
 		if m.stream == nil || msg.id != m.stream.id {
 			return m, nil
 		}
@@ -539,6 +556,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.stream.next()
 
 	case logDoneMsg:
+		if a, ok := m.actions[msg.id]; ok {
+			return m, m.actionDone(msg.id, a, msg.err)
+		}
 		if m.stream == nil || msg.id != m.stream.id {
 			return m, nil
 		}
@@ -583,6 +603,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.events.stop()
 		return m, tea.Quit
 	}
+
+	m.releaseOutput(msg)
 
 	if m.confirm != nil {
 		switch msg.String() {
@@ -740,10 +762,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.list.setFilter("")
 			return m, m.onSelect()
 		}
-		if m.stream != nil {
-			m.stopLogs()
-			m.appendLog(dimStyle.Render("-- stopped following --"))
-		}
 		return m, nil
 
 	case key.Matches(msg, keys.Refresh):
@@ -780,22 +798,21 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keys.Start):
 		a := args("up", "-d")
-		return m, tea.Batch(m.startBusy("up -d "+name), runAction(e, "docker compose up -d ("+name+")", a...))
+		return m, m.runAction(e, "up -d "+name, "docker compose up -d ("+name+")", a...)
 
 	case key.Matches(msg, keys.Restart):
 		a := args("restart")
-		return m, tea.Batch(m.startBusy("restarting "+name), runAction(e, "docker compose restart ("+name+")", a...))
+		return m, m.runAction(e, "restarting "+name, "docker compose restart ("+name+")", a...)
 
 	case key.Matches(msg, keys.Pull):
 		a := args("pull")
-		return m, tea.Batch(m.startBusy("pulling "+name), runAction(e, "docker compose pull ("+name+")", a...))
+		return m, m.runAction(e, "pulling "+name, "docker compose pull ("+name+")", a...)
 
 	case key.Matches(msg, keys.Stop):
 		m.confirm = &confirm{
 			prompt: fmt.Sprintf("Run docker compose down for %s? (y/n)", e.Rel),
 			onYes: func(m *Model) tea.Cmd {
-				return tea.Batch(m.startBusy("down "+e.Rel),
-					runAction(e, "docker compose down ("+e.Rel+")", "down"))
+				return m.runAction(e, "down "+e.Rel, "docker compose down ("+e.Rel+")", "down")
 			},
 		}
 		return m, nil
@@ -806,29 +823,14 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.confirm = &confirm{
 			prompt: fmt.Sprintf("Force recreate %s? (y/n)", target),
 			onYes: func(m *Model) tea.Cmd {
-				return tea.Batch(m.startBusy("recreating "+target),
-					runAction(e, "docker compose up -d --force-recreate ("+target+")", a...))
+				return m.runAction(e, "recreating "+target, "docker compose up -d --force-recreate ("+target+")", a...)
 			},
 		}
 		return m, nil
 
 	case key.Matches(msg, keys.Logs):
-		m.stopLogs()
-		m.streamID++
-		m.logLines = nil
-		m.search = logSearch{}
-		m.logs.SetContent("")
-		m.logTitle = "Logs · " + e.Rel
-		if svc != "" {
-			m.logTitle += " · " + svc
-		}
-		s, cmd := startLogs(m.streamID, e, svc)
-		m.stream = s
-		if s == nil {
-			// start failed; keep a dummy stream so the done message is shown
-			m.stream = &logStream{id: m.streamID, cancel: func() {}}
-		}
-		return m, cmd
+		m.holdOutput = false
+		return m, m.followLogs(e, svc)
 
 	case key.Matches(msg, keys.Toggle):
 		s := m.selectedService()
@@ -838,11 +840,9 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		name := e.Rel + " " + s
 		if m.serviceRunning(s) {
-			return m, tea.Batch(m.startBusy("stopping "+name),
-				runAction(e, "docker compose stop ("+name+")", "stop", s))
+			return m, m.runAction(e, "stopping "+name, "docker compose stop ("+name+")", "stop", s)
 		}
-		return m, tea.Batch(m.startBusy("starting "+name),
-			runAction(e, "docker compose up -d ("+name+")", "up", "-d", s))
+		return m, m.runAction(e, "starting "+name, "docker compose up -d ("+name+")", "up", "-d", s)
 
 	case key.Matches(msg, keys.Folder):
 		return m, openFolderShell(e)

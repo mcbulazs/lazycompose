@@ -169,19 +169,23 @@ Flags override the config:
 | `p` | `docker compose pull` |
 | `F` | Force recreate: `docker compose up -d --force-recreate` (asks first) |
 | `U` | Update all running environments: `pull`, then `up -d`, one at a time (asks first, `esc` stops after the current one) |
-| `l` | Follow logs |
+| `l` | Fetch the logs again |
 | `s` | Stop the selected service, or start it if it is not running |
 | `x` | Open a shell in the selected service (bash if it has it, otherwise sh) |
 | `o` | Open your shell (`$SHELL`) in the environment's folder; `exit` to come back |
 | `/` in the log pane | Search the logs; `n` older match, `N` newer match, `esc` clears |
 | `G` / `g` | Jump to the bottom / top of the log pane |
-| `esc` | Stop following logs |
 | `R` | Refresh and rescan folders |
 | `?` | Show all keys |
 | `q` | Quit |
 
 The mouse works too: the wheel scrolls the pane under the pointer and a click
 selects an environment or service.
+
+The log pane follows the selected environment, or the selected service while
+the services pane is focused. While a command like `up -d` or `pull` runs, the
+pane shows its output live instead, and keeps it after the command finishes
+until you press a key.
 
 `u`, `r`, `p`, `F` and `l` act on the whole environment, or on the selected
 service when the services pane is focused.

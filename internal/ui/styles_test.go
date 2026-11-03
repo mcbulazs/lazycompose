@@ -12,15 +12,15 @@ func TestLoadTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if th.Background != "" {
-		t.Errorf("terminal theme should not paint the background, got %q", th.Background)
+	if th.Focus != Themes["terminal"].Focus {
+		t.Errorf("default theme should be terminal")
 	}
 
-	th, err = LoadTheme("nord", nil, map[string]string{"focus": "#ff0000", "red": "9", "background": "#000"})
+	th, err = LoadTheme("nord", nil, map[string]string{"focus": "#ff0000", "red": "9", "background": "#000"}) // background is ignored
 	if err != nil {
 		t.Fatal(err)
 	}
-	if th.Focus != lipgloss.Color("#ff0000") || th.Red != lipgloss.Color("9") || th.Background != "#000" {
+	if th.Focus != lipgloss.Color("#ff0000") || th.Red != lipgloss.Color("9") {
 		t.Errorf("overrides not applied: %+v", th)
 	}
 	if th.Green != Themes["nord"].Green {
@@ -36,7 +36,6 @@ func TestLoadThemeErrors(t *testing.T) {
 		{"solarized", nil},
 		{"onedark", map[string]string{"focus": "blue"}},
 		{"onedark", map[string]string{"focus": "256"}},
-		{"onedark", map[string]string{"background": "4"}},
 		{"onedark", map[string]string{"accent": "#fff"}},
 	}
 	for _, c := range cases {
@@ -60,7 +59,7 @@ func TestLoadCustomTheme(t *testing.T) {
 	if th.Focus != lipgloss.Color("#ff9e64") {
 		t.Errorf("focus not set from theme: %v", th.Focus)
 	}
-	if th.Green != Themes["onedark"].Green || th.Background != Themes["onedark"].Background {
+	if th.Green != Themes["onedark"].Green || th.Border != Themes["onedark"].Border {
 		t.Errorf("other colours should come from the base theme")
 	}
 	if th.Red != lipgloss.Color("#ff0000") {
@@ -81,7 +80,7 @@ func TestLoadCustomTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if th.Focus != lipgloss.Color("#ffffff") || th.Background != Themes["nord"].Background {
+	if th.Focus != lipgloss.Color("#ffffff") || th.Green != Themes["nord"].Green {
 		t.Errorf("unexpected nord override: %+v", th)
 	}
 }

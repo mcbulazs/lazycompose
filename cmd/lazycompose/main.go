@@ -75,7 +75,7 @@ mouse: true
 
 # Colour theme. Built in: terminal, onedark, tokyonight, catppuccin, gruvbox
 # and nord. "terminal" uses your terminal's own colours; the others use fixed
-# colours and paint the terminal background while lazycompose runs.
+# colours. The terminal background is never changed.
 # You can also use the name of one of your own themes from below.
 theme: terminal
 
@@ -93,7 +93,6 @@ theme: terminal
 #   red         errors
 #   select_bg   background of the selected row
 #   select_fg   text of the selected row
-#   background  terminal background, hex only
 #
 # themes:
 #   sunset:
@@ -230,18 +229,11 @@ func main() {
 		Editor:   *cfg.Editor,
 	})
 
-	// paint the terminal background while running
-	if th.Background != "" {
-		fmt.Print("\x1b]11;" + th.Background + "\x07")
-	}
 	opts := []tea.ProgramOption{tea.WithAltScreen()}
 	if *cfg.Mouse {
 		opts = append(opts, tea.WithMouseCellMotion())
 	}
 	_, err = tea.NewProgram(m, opts...).Run()
-	if th.Background != "" {
-		fmt.Print("\x1b]111\x07")
-	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "lazycompose:", err)
 		os.Exit(1)

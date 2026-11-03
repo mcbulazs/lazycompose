@@ -13,13 +13,12 @@ import (
 
 const DefaultTheme = "terminal"
 
-// Theme holds the colours of the UI. Background is optional; when set the
-// terminal background is painted with it while the app runs.
+// Theme holds the colours of the UI. The terminal background is never
+// changed, so transparent terminals keep working.
 type Theme struct {
 	Border, Focus, Text, Dim lipgloss.TerminalColor
 	Green, Yellow, Red       lipgloss.TerminalColor
 	SelectBg, SelectFg       lipgloss.TerminalColor
-	Background               string
 }
 
 // Themes are the built-in themes. "terminal" only uses the terminal's own
@@ -31,20 +30,19 @@ var Themes = map[string]Theme{
 		Green: lipgloss.Color("2"), Yellow: lipgloss.Color("3"), Red: lipgloss.Color("1"),
 		SelectBg: lipgloss.Color("4"), SelectFg: lipgloss.NoColor{},
 	},
-	"onedark":    hexTheme("#282c34", "#4b5263", "#61afef", "#abb2bf", "#5c6370", "#98c379", "#e5c07b", "#e06c75", "#3e4451"),
-	"tokyonight": hexTheme("#1a1b26", "#3b4261", "#7aa2f7", "#c0caf5", "#565f89", "#9ece6a", "#e0af68", "#f7768e", "#283457"),
-	"catppuccin": hexTheme("#1e1e2e", "#45475a", "#89b4fa", "#cdd6f4", "#6c7086", "#a6e3a1", "#f9e2af", "#f38ba8", "#313244"),
-	"gruvbox":    hexTheme("#282828", "#504945", "#83a598", "#ebdbb2", "#928374", "#b8bb26", "#fabd2f", "#fb4934", "#3c3836"),
-	"nord":       hexTheme("#2e3440", "#4c566a", "#88c0d0", "#d8dee9", "#616e88", "#a3be8c", "#ebcb8b", "#bf616a", "#3b4252"),
+	"onedark":    hexTheme("#4b5263", "#61afef", "#abb2bf", "#5c6370", "#98c379", "#e5c07b", "#e06c75", "#3e4451"),
+	"tokyonight": hexTheme("#3b4261", "#7aa2f7", "#c0caf5", "#565f89", "#9ece6a", "#e0af68", "#f7768e", "#283457"),
+	"catppuccin": hexTheme("#45475a", "#89b4fa", "#cdd6f4", "#6c7086", "#a6e3a1", "#f9e2af", "#f38ba8", "#313244"),
+	"gruvbox":    hexTheme("#504945", "#83a598", "#ebdbb2", "#928374", "#b8bb26", "#fabd2f", "#fb4934", "#3c3836"),
+	"nord":       hexTheme("#4c566a", "#88c0d0", "#d8dee9", "#616e88", "#a3be8c", "#ebcb8b", "#bf616a", "#3b4252"),
 }
 
-func hexTheme(bg, border, focus, text, dim, green, yellow, red, selBg string) Theme {
+func hexTheme(border, focus, text, dim, green, yellow, red, selBg string) Theme {
 	return Theme{
 		Border: lipgloss.Color(border), Focus: lipgloss.Color(focus),
 		Text: lipgloss.Color(text), Dim: lipgloss.Color(dim),
 		Green: lipgloss.Color(green), Yellow: lipgloss.Color(yellow), Red: lipgloss.Color(red),
 		SelectBg: lipgloss.Color(selBg), SelectFg: lipgloss.Color(text),
-		Background: bg,
 	}
 }
 
@@ -115,11 +113,15 @@ func sortedKeys[V any](m map[string]V) []string {
 }
 
 // ColorKeys are the colour names a theme can set.
-var ColorKeys = []string{"border", "focus", "text", "dim", "green", "yellow", "red", "select_bg", "select_fg", "background"}
+var ColorKeys = []string{"border", "focus", "text", "dim", "green", "yellow", "red", "select_bg", "select_fg"}
 
 var hexColor = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
 
 func (t *Theme) set(key, value string) error {
+	if key == "background" {
+		// older versions painted the terminal background; ignore the key
+		return nil
+	}
 	value = strings.TrimSpace(value)
 	if n, err := strconv.Atoi(value); !hexColor.MatchString(value) && (err != nil || n < 0 || n > 255) {
 		return fmt.Errorf("%q is not a hex colour or 0-255", value)
@@ -144,11 +146,6 @@ func (t *Theme) set(key, value string) error {
 		t.SelectBg = c
 	case "select_fg":
 		t.SelectFg = c
-	case "background":
-		if !hexColor.MatchString(value) {
-			return fmt.Errorf("%q must be a hex colour", value)
-		}
-		t.Background = value
 	default:
 		return fmt.Errorf("unknown colour key, use one of: %s", strings.Join(ColorKeys, ", "))
 	}

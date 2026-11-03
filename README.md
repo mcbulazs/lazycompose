@@ -113,7 +113,8 @@ subfolders are not scanned.
 Built-in themes: `terminal`, `onedark`, `tokyonight`, `catppuccin`, `gruvbox`
 and `nord`. The `terminal` theme uses your terminal's own colours, like lazygit
 does: a green border on the active pane and a blue selected line. The others
-use fixed colours and paint the terminal background while lazycompose runs.
+use fixed colours. None of them change the terminal background, so transparent
+terminals keep working.
 
 To make your own, add it under `themes` and select it with `theme`. It starts
 from the built-in theme in `base` (`terminal` if left out) and changes only the
@@ -141,7 +142,6 @@ Colours are hex values or terminal colour numbers (0-255).
 | `red` | Errors |
 | `select_bg` | Background of the selected row |
 | `select_fg` | Text of the selected row |
-| `background` | Terminal background, hex only |
 
 Flags override the config:
 

@@ -65,7 +65,7 @@ roots:
 max_depth: 3
 ```
 
-Both values are optional. `roots` defaults to `~/stacks` and
+Both values are optional. `roots` defaults to your home folder and
 `max_depth` to 3. Flags:
 
 | Flag | Description |

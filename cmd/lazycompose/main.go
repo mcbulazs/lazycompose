@@ -43,14 +43,14 @@ func defaultConfigPath() string {
 
 const defaultConfig = `# Folders to scan for compose files.
 roots:
-  - ~/stacks
+  - "~"
 
 # How many folders deep to look under each root.
 max_depth: 3
 `
 
 func loadConfig(path string) (config, error) {
-	cfg := config{Roots: []string{"~/stacks"}, MaxDepth: 3}
+	cfg := config{Roots: []string{"~"}, MaxDepth: 3}
 	if path == "" {
 		return cfg, nil
 	}
@@ -80,7 +80,8 @@ func loadConfig(path string) (config, error) {
 }
 
 func expandHome(p string) string {
-	if p == "~" || strings.HasPrefix(p, "~/") {
+	// a bare ~ in YAML is null, which arrives here as ""
+	if p == "" || p == "~" || strings.HasPrefix(p, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {
 			return filepath.Join(home, strings.TrimPrefix(p, "~"))
 		}

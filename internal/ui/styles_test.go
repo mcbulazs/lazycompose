@@ -11,8 +11,8 @@ func TestLoadTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if th.Background != "#282c34" {
-		t.Errorf("default should be onedark, got background %q", th.Background)
+	if th.Background != "" {
+		t.Errorf("terminal theme should not paint the background, got %q", th.Background)
 	}
 
 	th, err = LoadTheme("nord", map[string]string{"focus": "#ff0000", "red": "9", "background": "#000"})
@@ -33,7 +33,6 @@ func TestLoadThemeErrors(t *testing.T) {
 		overrides map[string]string
 	}{
 		{"solarized", nil},
-		{"terminal", nil},
 		{"onedark", map[string]string{"focus": "blue"}},
 		{"onedark", map[string]string{"focus": "256"}},
 		{"onedark", map[string]string{"background": "4"}},

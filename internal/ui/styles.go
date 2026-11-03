@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-const DefaultTheme = "onedark"
+const DefaultTheme = "terminal"
 
 // Theme holds the colours of the UI. Background is optional; when set the
 // terminal background is painted with it while the app runs.
@@ -22,8 +22,15 @@ type Theme struct {
 	Background               string
 }
 
-// Themes are the built-in themes.
+// Themes are the built-in themes. "terminal" only uses the terminal's own
+// palette, in the style of lazygit: green active border, blue selected line.
 var Themes = map[string]Theme{
+	"terminal": {
+		Border: lipgloss.NoColor{}, Focus: lipgloss.Color("2"),
+		Text: lipgloss.NoColor{}, Dim: lipgloss.Color("8"),
+		Green: lipgloss.Color("2"), Yellow: lipgloss.Color("3"), Red: lipgloss.Color("1"),
+		SelectBg: lipgloss.Color("4"), SelectFg: lipgloss.NoColor{},
+	},
 	"onedark":    hexTheme("#282c34", "#4b5263", "#61afef", "#abb2bf", "#5c6370", "#98c379", "#e5c07b", "#e06c75", "#3e4451"),
 	"tokyonight": hexTheme("#1a1b26", "#3b4261", "#7aa2f7", "#c0caf5", "#565f89", "#9ece6a", "#e0af68", "#f7768e", "#283457"),
 	"catppuccin": hexTheme("#1e1e2e", "#45475a", "#89b4fa", "#cdd6f4", "#6c7086", "#a6e3a1", "#f9e2af", "#f38ba8", "#313244"),

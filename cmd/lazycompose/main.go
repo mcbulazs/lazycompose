@@ -50,9 +50,8 @@ roots:
 # How many folders deep to look under each root. 0 means no limit.
 max_depth: 0
 
-# Colour theme: terminal, tokyonight, catppuccin, gruvbox or nord.
-# "terminal" uses your terminal's own colours.
-theme: terminal
+# Colour theme: onedark, tokyonight, catppuccin, gruvbox or nord.
+theme: onedark
 
 # Override single colours with a hex value or an ANSI number (0-255).
 # Keys: border, focus, text, dim, green, yellow, red, select_bg, select_fg,
@@ -62,7 +61,7 @@ theme: terminal
 `
 
 func loadConfig(path string) (config, error) {
-	cfg := config{Roots: []string{"~"}, Theme: "terminal"}
+	cfg := config{Roots: []string{"~"}, Theme: ui.DefaultTheme}
 	if path == "" {
 		return cfg, nil
 	}

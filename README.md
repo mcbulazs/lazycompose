@@ -63,7 +63,7 @@ roots:
   - /srv/stacks
   - ~/projects
 max_depth: 0
-theme: terminal
+theme: onedark
 colors:
   focus: "#7aa2f7"
 ```
@@ -72,12 +72,11 @@ colors:
 | --- | --- | --- |
 | `roots` | your home folder | Folders to scan for compose files. |
 | `max_depth` | `0` | How many folders deep to look. `0` means no limit. |
-| `theme` | `terminal` | `terminal`, `tokyonight`, `catppuccin`, `gruvbox` or `nord`. |
+| `theme` | `onedark` | `onedark`, `tokyonight`, `catppuccin`, `gruvbox` or `nord`. |
 | `colors` | | Override single colours with a hex value or an ANSI number (0-255). |
 
-The `terminal` theme uses your terminal's own colours, so it matches whatever
-theme your terminal already has. The other themes also paint the terminal
-background while lazycompose runs.
+Themes paint the terminal background while lazycompose runs and reset it on
+exit.
 
 Colour keys: `border`, `focus`, `text`, `dim`, `green`, `yellow`, `red`,
 `select_bg`, `select_fg` and `background`.

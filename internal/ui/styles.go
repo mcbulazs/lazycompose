@@ -11,6 +11,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+const DefaultTheme = "onedark"
+
 // Theme holds the colours of the UI. Background is optional; when set the
 // terminal background is painted with it while the app runs.
 type Theme struct {
@@ -20,15 +22,9 @@ type Theme struct {
 	Background               string
 }
 
-// Themes are the built-in themes. "terminal" uses the terminal's own
-// 16 colours so it follows whatever theme the terminal is set to.
+// Themes are the built-in themes.
 var Themes = map[string]Theme{
-	"terminal": {
-		Border: lipgloss.Color("8"), Focus: lipgloss.Color("4"),
-		Text: lipgloss.NoColor{}, Dim: lipgloss.Color("8"),
-		Green: lipgloss.Color("2"), Yellow: lipgloss.Color("3"), Red: lipgloss.Color("1"),
-		SelectBg: lipgloss.Color("4"), SelectFg: lipgloss.Color("0"),
-	},
+	"onedark":    hexTheme("#282c34", "#4b5263", "#61afef", "#abb2bf", "#5c6370", "#98c379", "#e5c07b", "#e06c75", "#3e4451"),
 	"tokyonight": hexTheme("#1a1b26", "#3b4261", "#7aa2f7", "#c0caf5", "#565f89", "#9ece6a", "#e0af68", "#f7768e", "#283457"),
 	"catppuccin": hexTheme("#1e1e2e", "#45475a", "#89b4fa", "#cdd6f4", "#6c7086", "#a6e3a1", "#f9e2af", "#f38ba8", "#313244"),
 	"gruvbox":    hexTheme("#282828", "#504945", "#83a598", "#ebdbb2", "#928374", "#b8bb26", "#fabd2f", "#fb4934", "#3c3836"),
@@ -58,7 +54,7 @@ func ThemeNames() []string {
 // LoadTheme returns a built-in theme with single colours overridden.
 func LoadTheme(name string, overrides map[string]string) (Theme, error) {
 	if name == "" {
-		name = "terminal"
+		name = DefaultTheme
 	}
 	t, ok := Themes[name]
 	if !ok {
@@ -117,7 +113,7 @@ var (
 	titleStyle, titleDim, selectedRow, groupStyle, confirmStyle         lipgloss.Style
 )
 
-func init() { applyTheme(Themes["terminal"]) }
+func init() { applyTheme(Themes[DefaultTheme]) }
 
 func applyTheme(t Theme) {
 	colBorder, colFocus, colText, colDim = t.Border, t.Focus, t.Text, t.Dim

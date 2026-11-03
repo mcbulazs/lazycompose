@@ -38,7 +38,7 @@ func TestLoadConfigKeepsExisting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Roots) != 1 || cfg.Roots[0] != "/srv/stacks" || cfg.MaxDepth != 0 || cfg.Theme != "terminal" {
+	if len(cfg.Roots) != 1 || cfg.Roots[0] != "/srv/stacks" || cfg.MaxDepth != 0 || cfg.Theme != "onedark" {
 		t.Fatalf("unexpected config %+v", cfg)
 	}
 	b, _ := os.ReadFile(path)

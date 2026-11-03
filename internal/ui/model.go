@@ -800,6 +800,18 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case key.Matches(msg, keys.Recreate):
+		a := args("up", "-d", "--force-recreate")
+		target := name
+		m.confirm = &confirm{
+			prompt: fmt.Sprintf("Force recreate %s? (y/n)", target),
+			onYes: func(m *Model) tea.Cmd {
+				return tea.Batch(m.startBusy("recreating "+target),
+					runAction(e, "docker compose up -d --force-recreate ("+target+")", a...))
+			},
+		}
+		return m, nil
+
 	case key.Matches(msg, keys.Logs):
 		m.stopLogs()
 		m.streamID++

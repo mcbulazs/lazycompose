@@ -485,3 +485,26 @@ func TestHighlight(t *testing.T) {
 		t.Errorf("highlight changed the text: %q", got)
 	}
 }
+
+func TestForceRecreate(t *testing.T) {
+	m := newTestModel(t)
+	m = send(m, press("F")...)
+	if m.confirm == nil || m.confirm.prompt != "Force recreate plex? (y/n)" {
+		t.Fatalf("env prompt %+v", m.confirm)
+	}
+	m = send(m, press("y")...)
+	if m.busy != 1 || m.status != "recreating plex" {
+		t.Errorf("busy %d, status %q", m.busy, m.status)
+	}
+
+	// with the services pane focused it targets the selected service
+	m = newTestModel(t)
+	m = send(m,
+		servicesMsg{services: map[string][]string{"/srv/plex": {"plex"}}},
+		psMsg{dir: "/srv/plex"},
+	)
+	m = send(m, press("tab", "F")...)
+	if m.confirm == nil || m.confirm.prompt != "Force recreate plex plex? (y/n)" {
+		t.Errorf("service prompt %+v", m.confirm)
+	}
+}

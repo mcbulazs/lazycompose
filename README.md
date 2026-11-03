@@ -167,6 +167,7 @@ Flags override the config:
 | `d` | `docker compose down` (asks first) |
 | `r` | `docker compose restart` |
 | `p` | `docker compose pull` |
+| `F` | Force recreate: `docker compose up -d --force-recreate` (asks first) |
 | `U` | Update all running environments: `pull`, then `up -d`, one at a time (asks first, `esc` stops after the current one) |
 | `l` | Follow logs |
 | `s` | Stop the selected service, or start it if it is not running |
@@ -182,7 +183,7 @@ Flags override the config:
 The mouse works too: the wheel scrolls the pane under the pointer and a click
 selects an environment or service.
 
-`u`, `r`, `p` and `l` act on the whole environment, or on the selected
+`u`, `r`, `p`, `F` and `l` act on the whole environment, or on the selected
 service when the services pane is focused.
 
 After editing, lazycompose runs `docker compose config -q`. If the file is

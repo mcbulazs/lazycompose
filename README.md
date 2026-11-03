@@ -1,6 +1,6 @@
 # lazycompose
 
-A terminal UI for managing Docker Compose stacks on a home server. It scans
+A terminal UI for managing Docker Compose stacks on a server. It scans
 your app folders for compose files, shows what is running, and lets you start,
 stop, restart, pull, edit and tail logs without leaving the terminal.
 
@@ -13,10 +13,11 @@ Every folder with a `compose.yaml` (or `compose.yml`, `docker-compose.yaml`,
 `docker-compose.yml`) under one of the configured roots is an environment:
 
 ```
-/mnt/data/global
-├── game-servers/minecraft/compose.yaml
-├── plex/compose.yaml
-└── web/blogger/compose.yaml
+/srv/stacks
+├── media/jellyfin/compose.yaml
+├── monitoring/grafana/compose.yaml
+├── monitoring/prometheus/compose.yaml
+└── nextcloud/compose.yaml
 ```
 
 Environments are grouped by their parent folder. The status dot shows
@@ -65,11 +66,13 @@ docker compose run --rm dev go test ./...
 
 ```yaml
 roots:
-  - /mnt/data/global
+  - /srv/stacks
+  - ~/projects
 max_depth: 3
 ```
 
-Both values are optional; the defaults are shown above. Flags:
+Both values are optional. `roots` defaults to `/mnt/data/global` and
+`max_depth` to 3. Flags:
 
 | Flag | Description |
 | --- | --- |

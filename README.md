@@ -60,12 +60,14 @@ every option. Set `roots` there to make the folder permanent.
 
 ## Documentation
 
-- [Usage](docs/usage.md): environments, problems, logs, editing, update all
-- [Configuration](docs/configuration.md): the config file and flags
-- [Keys](docs/keys.md): every key, and how to change them
-- [Themes](docs/themes.md): built-in and custom themes
-- [Shell integration](docs/shell.md): change directory on quit, tmux
-- [Development](docs/development.md): building, tests, releasing
+The full documentation is in the [wiki](https://github.com/mcbulazs/lazycompose/wiki):
+
+- [Usage](https://github.com/mcbulazs/lazycompose/wiki/Usage): environments, problems, logs, editing, update all
+- [Configuration](https://github.com/mcbulazs/lazycompose/wiki/Configuration): the config file and flags
+- [Keys](https://github.com/mcbulazs/lazycompose/wiki/Keys): every key, and how to change them
+- [Themes](https://github.com/mcbulazs/lazycompose/wiki/Themes): built-in and custom themes
+- [Shell integration](https://github.com/mcbulazs/lazycompose/wiki/Shell-integration): change directory on quit, tmux
+- [Development](https://github.com/mcbulazs/lazycompose/wiki/Development): building, tests, releasing
 
 ## License
 

@@ -6,8 +6,7 @@ A terminal UI for managing Docker Compose stacks on a server. It scans
 your app folders for compose files, shows what is running, and lets you start,
 stop, restart, pull, edit and tail logs without leaving the terminal.
 
-_Screenshot coming soon._
-<!-- ![lazycompose](docs/screenshot.png) -->
+![lazycompose showing environments, services and live logs](docs/screenshot.png)
 
 ## How it works
 

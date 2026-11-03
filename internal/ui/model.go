@@ -434,6 +434,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setStatus("", false)
 		return m, openShell(msg.env, msg.service, msg.shell)
 
+	case folderShellMsg:
+		if msg.err != nil {
+			m.setStatus("shell: "+msg.err.Error(), true)
+		}
+		// the compose file may have changed while in the folder
+		return m, tea.Batch(m.refreshNow(), loadServices([]discover.Env{msg.env}))
+
 	case shellMsg:
 		if msg.err != nil {
 			m.setStatus("shell: "+msg.err.Error(), true)
@@ -686,6 +693,23 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.stream = &logStream{id: m.streamID, cancel: func() {}}
 		}
 		return m, cmd
+
+	case key.Matches(msg, keys.Toggle):
+		s := m.selectedService()
+		if s == "" {
+			m.setStatus("no service selected", true)
+			return m, nil
+		}
+		name := e.Rel + " " + s
+		if m.serviceRunning(s) {
+			return m, tea.Batch(m.startBusy("stopping "+name),
+				runAction(e, "docker compose stop ("+name+")", "stop", s))
+		}
+		return m, tea.Batch(m.startBusy("starting "+name),
+			runAction(e, "docker compose up -d ("+name+")", "up", "-d", s))
+
+	case key.Matches(msg, keys.Folder):
+		return m, openFolderShell(e)
 
 	case key.Matches(msg, keys.Shell):
 		s := m.selectedService()

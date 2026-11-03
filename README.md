@@ -163,7 +163,9 @@ Flags override the config:
 | `p` | `docker compose pull` |
 | `U` | Update all running environments: `pull`, then `up -d`, one at a time (asks first, `esc` stops after the current one) |
 | `l` | Follow logs |
+| `s` | Stop the selected service, or start it if it is not running |
 | `x` | Open a shell in the selected service (bash if it has it, otherwise sh) |
+| `o` | Open your shell (`$SHELL`) in the environment's folder; `exit` to come back |
 | `esc` | Stop following logs |
 | `R` | Refresh and rescan folders |
 | `?` | Show all keys |

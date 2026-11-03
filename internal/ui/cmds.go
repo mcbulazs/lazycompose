@@ -317,3 +317,26 @@ func countRecreated(out string) int {
 	}
 	return n
 }
+
+type folderShellMsg struct {
+	env discover.Env
+	err error
+}
+
+// openFolderShell starts the user's shell in the environment's folder.
+func openFolderShell(e discover.Env) tea.Cmd {
+	sh := os.Getenv("SHELL")
+	if sh == "" {
+		sh = "sh"
+	}
+	cmd := exec.Command(sh)
+	cmd.Dir = e.Dir
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		// a non-zero exit just means the last command failed
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			err = nil
+		}
+		return folderShellMsg{env: e, err: err}
+	})
+}

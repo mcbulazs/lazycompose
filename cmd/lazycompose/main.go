@@ -41,6 +41,14 @@ func defaultConfigPath() string {
 	return filepath.Join(dir, "lazycompose", "config.yaml")
 }
 
+const defaultConfig = `# Folders to scan for compose files.
+roots:
+  - ~/stacks
+
+# How many folders deep to look under each root.
+max_depth: 3
+`
+
 func loadConfig(path string) (config, error) {
 	cfg := config{Roots: []string{"~/stacks"}, MaxDepth: 3}
 	if path == "" {
@@ -48,6 +56,11 @@ func loadConfig(path string) (config, error) {
 	}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
+		// first run: write the defaults so there is a file to edit.
+		// Failing to write is fine, the defaults still apply.
+		if os.MkdirAll(filepath.Dir(path), 0o755) == nil {
+			_ = os.WriteFile(path, []byte(defaultConfig), 0o644)
+		}
 		return cfg, nil
 	}
 	if err != nil {
@@ -101,6 +114,9 @@ func main() {
 	envs, err := find()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "lazycompose:", err)
+		if errors.Is(err, fs.ErrNotExist) && *configPath != "" {
+			fmt.Fprintf(os.Stderr, "set your folders in %s or pass -root\n", *configPath)
+		}
 		os.Exit(1)
 	}
 

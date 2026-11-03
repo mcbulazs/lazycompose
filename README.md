@@ -55,7 +55,8 @@ go test ./...
 
 ## Config
 
-`~/.config/lazycompose/config.yaml`:
+On first run lazycompose creates `~/.config/lazycompose/config.yaml` with the
+defaults. Edit it to point at your own folders:
 
 ```yaml
 roots:

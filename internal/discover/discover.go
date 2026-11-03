@@ -19,7 +19,7 @@ var ComposeFiles = []string{
 // Env is a folder that contains a compose file.
 type Env struct {
 	Root string // scan root it was found under
-	Rel  string // path relative to Root, e.g. "web/blogger"
+	Rel  string // path relative to Root, e.g. "web/blog"
 	Dir  string // absolute folder
 	File string // absolute path to the compose file
 }

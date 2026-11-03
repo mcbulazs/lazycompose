@@ -100,21 +100,21 @@ func TestParseDockerPS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b := m["/mnt/data/global/web/blogger"]
+	b := m["/srv/stacks/web/blog"]
 	if b == nil {
-		t.Fatalf("blogger missing: %v", m)
+		t.Fatalf("blog missing: %v", m)
 	}
 	// the one-off "run" container is ignored
 	if b.Running != 2 || b.Total != 3 {
-		t.Errorf("blogger running=%d total=%d, want 2/3", b.Running, b.Total)
+		t.Errorf("blog running=%d total=%d, want 2/3", b.Running, b.Total)
 	}
 	if !b.Services["db"] || !b.Services["web"] || b.Services["worker"] {
-		t.Errorf("blogger services %v", b.Services)
+		t.Errorf("blog services %v", b.Services)
 	}
 
-	p := m["/mnt/data/global/plex"]
+	p := m["/srv/stacks/jellyfin"]
 	if p == nil || p.Running != 0 || p.Total != 1 {
-		t.Errorf("plex state %+v", p)
+		t.Errorf("jellyfin state %+v", p)
 	}
 }
 
@@ -131,8 +131,8 @@ func TestParseLabelsWithCommas(t *testing.T) {
 func TestShort(t *testing.T) {
 	tests := map[string]string{
 		"postgres:16-alpine":                  "postgres:16-alpine",
-		"ghcr.io/mcbulazs/blogger:latest":     "blogger:latest",
-		"lscr.io/linuxserver/plex:1.40":       "plex:1.40",
+		"ghcr.io/example/blog:latest":         "blog:latest",
+		"lscr.io/linuxserver/jellyfin:1.40":   "jellyfin:1.40",
 		"sha256:b92841763c5c2140a20eeb2a44e9": "sha256:b92841763c5c",
 	}
 	for in, want := range tests {

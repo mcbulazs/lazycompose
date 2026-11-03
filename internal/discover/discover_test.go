@@ -18,12 +18,12 @@ func touch(t *testing.T, path string) {
 
 func TestFind(t *testing.T) {
 	root := t.TempDir()
-	touch(t, filepath.Join(root, "web/blogger/compose.yaml"))
+	touch(t, filepath.Join(root, "web/blog/compose.yaml"))
 	touch(t, filepath.Join(root, "web/shop/docker-compose.yml"))
-	touch(t, filepath.Join(root, "game-servers/minecraft/compose.yml"))
-	touch(t, filepath.Join(root, "plex/compose.yaml"))
+	touch(t, filepath.Join(root, "games/minecraft/compose.yml"))
+	touch(t, filepath.Join(root, "jellyfin/compose.yaml"))
 	// nested inside an environment, should be ignored
-	touch(t, filepath.Join(root, "plex/config/old/compose.yaml"))
+	touch(t, filepath.Join(root, "jellyfin/config/old/compose.yaml"))
 	// too deep for maxDepth 3
 	touch(t, filepath.Join(root, "a/b/c/d/compose.yaml"))
 	// hidden folders are skipped
@@ -37,9 +37,9 @@ func TestFind(t *testing.T) {
 	}
 
 	want := []struct{ rel, file, group, name string }{
-		{"game-servers/minecraft", "compose.yml", "game-servers", "minecraft"},
-		{"plex", "compose.yaml", "", "plex"},
-		{"web/blogger", "compose.yaml", "web", "blogger"},
+		{"games/minecraft", "compose.yml", "games", "minecraft"},
+		{"jellyfin", "compose.yaml", "", "jellyfin"},
+		{"web/blog", "compose.yaml", "web", "blog"},
 		{"web/shop", "docker-compose.yml", "web", "shop"},
 	}
 	if len(envs) != len(want) {

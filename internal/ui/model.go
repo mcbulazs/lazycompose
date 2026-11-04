@@ -66,7 +66,8 @@ type Model struct {
 	logTarget   logTarget // what the log stream follows
 	pendingLogs logTarget // waiting for the selection to settle
 	autoID      int
-	holdOutput  bool // keep command output until a key is pressed
+	holdOutput  bool           // keep command output until a key is pressed
+	outputKeys  map[string]int // progress line positions in command output
 	actions     map[int]*actionRun
 	search      logSearch
 	searching   bool
@@ -558,7 +559,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case logLinesMsg:
 		if a, ok := m.actions[msg.id]; ok {
-			m.appendLog(msg.lines...)
+			m.appendOutput(msg.lines...)
 			return m, a.stream.next()
 		}
 		if m.stream == nil || msg.id != m.stream.id {

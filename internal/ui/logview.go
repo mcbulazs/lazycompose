@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -93,6 +94,7 @@ func (m *Model) runAction(e discover.Env, busy, label string, args ...string) te
 	}
 	m.holdOutput = true
 	m.logTitle = "Output"
+	m.outputKeys = nil
 	m.appendLog(dimStyle.Render("$ " + label))
 
 	m.streamID++
@@ -140,4 +142,43 @@ func (m *Model) releaseOutput(msg tea.KeyMsg) {
 	m.holdOutput = false
 	m.logTarget = logTarget{}
 	m.pendingLogs = logTarget{}
+}
+
+// Docker redraws progress in place on a terminal, but into a pipe it writes
+// every update as a new line. Lines about the same layer or object replace
+// the previous one, so a pull shows one growing bar per layer.
+var progressKey = regexp.MustCompile(`^\s*(?:([0-9a-f]{12})\s|((?:Container|Image|Network|Volume)\s+\S+)\s)`)
+
+func outputKey(line string) string {
+	m := progressKey.FindStringSubmatch(line)
+	if m == nil {
+		return ""
+	}
+	return m[1] + m[2]
+}
+
+func (m *Model) appendOutput(lines ...string) {
+	if m.outputKeys == nil {
+		m.outputKeys = map[string]int{}
+	}
+	atBottom := m.logs.AtBottom() || len(m.logLines) == 0
+	for _, l := range lines {
+		k := outputKey(l)
+		if i, ok := m.outputKeys[k]; ok && i < len(m.logLines) && outputKey(m.logLines[i]) == k {
+			m.logLines[i] = l
+			continue
+		}
+		if k != "" {
+			m.outputKeys[k] = len(m.logLines)
+		}
+		m.logLines = append(m.logLines, l)
+	}
+	if over := len(m.logLines) - maxLogLines; over > 0 {
+		m.logLines = m.logLines[over:]
+		m.outputKeys = map[string]int{} // positions moved
+	}
+	m.renderLogs()
+	if atBottom {
+		m.logs.GotoBottom()
+	}
 }

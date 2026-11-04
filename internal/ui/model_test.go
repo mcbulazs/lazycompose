@@ -634,3 +634,33 @@ func TestQuitToFolder(t *testing.T) {
 		t.Errorf("q should not set a folder, got %q", m.QuitDir())
 	}
 }
+
+func TestProgressLinesCollapse(t *testing.T) {
+	m := newTestModel(t)
+	m = send(m, press("p")...)
+	var id int
+	for id = range m.actions {
+	}
+	m = send(m, logLinesMsg{id: id, lines: []string{
+		" Image nextcloud:30 Pulling",
+		"cce6de6ca5f3 Downloading [=>      ] 1MB/265MB",
+		"0aefc10db716 Downloading [=======>] 122B/122B",
+		"cce6de6ca5f3 Downloading [==>     ] 2MB/265MB",
+	}})
+	m = send(m, logLinesMsg{id: id, lines: []string{
+		"cce6de6ca5f3 Downloading [====>   ] 9MB/265MB",
+		"0aefc10db716 Download complete",
+		"some other line",
+		" Image nextcloud:30 Pulled",
+	}})
+	want := []string{
+		" Image nextcloud:30 Pulled",
+		"cce6de6ca5f3 Downloading [====>   ] 9MB/265MB",
+		"0aefc10db716 Download complete",
+		"some other line",
+	}
+	got := m.logLines[1:] // after the "$ docker compose pull" line
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}

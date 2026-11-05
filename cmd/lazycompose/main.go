@@ -274,6 +274,7 @@ func main() {
 		Theme:    th,
 		Editor:   *cfg.Editor,
 		CdFile:   *cdFile,
+		Mouse:    *cfg.Mouse,
 	})
 
 	opts := []tea.ProgramOption{tea.WithAltScreen()}

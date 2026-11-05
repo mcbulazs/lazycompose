@@ -38,6 +38,8 @@ type Options struct {
 	Editor   string
 	// CdFile receives the selected folder when quitting with quit_to_folder
 	CdFile string
+	// Mouse is set when the program runs with mouse support
+	Mouse bool
 }
 
 type confirm struct {
@@ -334,7 +336,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if c := nm.scheduleLogs(); c != nil {
 		cmd = tea.Batch(cmd, c)
 	}
+	if nm.opts.Mouse && handedOver(msg) {
+		// Bubble Tea turns the mouse off when it hands the terminal to
+		// another program and does not turn it back on afterwards.
+		cmd = tea.Batch(cmd, tea.EnableMouseCellMotion)
+	}
 	return nm, cmd
+}
+
+// handedOver reports messages sent when the editor or a shell has exited.
+func handedOver(msg tea.Msg) bool {
+	switch msg.(type) {
+	case editorMsg, shellMsg, folderShellMsg:
+		return true
+	}
+	return false
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {

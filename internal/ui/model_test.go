@@ -664,3 +664,17 @@ func TestProgressLinesCollapse(t *testing.T) {
 		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+func TestPaneTitlesShowKeys(t *testing.T) {
+	m := newTestModel(t)
+	v := m.View()
+	for _, want := range []string{"[1] Environments", "[2] Services", "[3] Logs"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("view should show %q", want)
+		}
+	}
+	m = send(m, press("3")...)
+	if m.focus != focusLogs {
+		t.Errorf("3 should focus the logs, focus is %v", m.focus)
+	}
+}

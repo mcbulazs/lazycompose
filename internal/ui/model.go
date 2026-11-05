@@ -1151,7 +1151,7 @@ func (m Model) View() string {
 	sh := m.servicesHeight()
 
 	listH := m.listHeight()
-	envTitle := "Environments"
+	envTitle := paneKey(keys.FocusEnvs) + "Environments"
 	if m.problemsOnly {
 		envTitle += " · problems"
 	}
@@ -1170,7 +1170,7 @@ func (m Model) View() string {
 	}
 	left := pane(envTitle, listBody, lw, body, m.focus == focusEnvs)
 
-	svcTitle := "Services"
+	svcTitle := paneKey(keys.FocusServices) + "Services"
 	if e, ok := m.selectedEnv(); ok {
 		svcTitle += " · " + e.Rel
 	}
@@ -1182,7 +1182,7 @@ func (m Model) View() string {
 	}
 	services := pane(svcTitle, svcBody, rw, sh, m.focus == focusServices)
 
-	logTitle := m.logTitle
+	logTitle := paneKey(keys.FocusLogs) + m.logTitle
 	if m.stream != nil {
 		logTitle += " (following)"
 	}
@@ -1257,4 +1257,13 @@ func (m Model) statusView() string {
 func (m Model) footerView() string {
 	m.help.Width = m.width - 2
 	return lipgloss.NewStyle().PaddingLeft(1).Render(m.help.View(keys))
+}
+
+// paneKey is the "[1] " prefix of a pane title, showing the key that jumps to
+// the pane, like lazygit.
+func paneKey(b key.Binding) string {
+	if !b.Enabled() || len(b.Keys()) == 0 {
+		return ""
+	}
+	return "[" + b.Keys()[0] + "] "
 }

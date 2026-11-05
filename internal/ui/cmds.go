@@ -248,7 +248,7 @@ func startStream(id int, ctx context.Context, cancel context.CancelFunc, cmd *ex
 			sc := bufio.NewScanner(pr)
 			sc.Buffer(make([]byte, 64*1024), 1024*1024)
 			for sc.Scan() {
-				s.lines <- sc.Text()
+				s.lines <- cleanLine(sc.Text())
 			}
 			if err := sc.Err(); err != nil && ctx.Err() == nil {
 				s.err = err

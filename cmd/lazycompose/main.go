@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 	"github.com/mcbulazs/lazycompose/internal/history"
+	"github.com/mcbulazs/lazycompose/internal/selfupdate"
 	"github.com/mcbulazs/lazycompose/internal/stackfs"
 	"github.com/mcbulazs/lazycompose/internal/ui"
 	"go.yaml.in/yaml/v3"
@@ -26,6 +28,7 @@ type config struct {
 	Editor   *string                      `yaml:"editor"`
 	Mouse    *bool                        `yaml:"mouse"`
 	Quick    *bool                        `yaml:"quick_access"`
+	Version  *bool                        `yaml:"version_check"`
 	Updates  *string                      `yaml:"update_check"`
 	Template string                       `yaml:"new_env_template"`
 	Dotenv   bool                         `yaml:"new_env_create_dotenv"`
@@ -111,6 +114,10 @@ quick_access: true
 # limit. Private registries are skipped. Set it to 0 to turn it off.
 update_check: 6h
 
+# Once a day, look on GitHub for a newer lazycompose release and mention it
+# in the header. lazycompose -update installs it.
+version_check: true
+
 # The compose file name of new environments (the n key): compose.yaml,
 # compose.yml, docker-compose.yaml or docker-compose.yml.
 new_compose_filename: docker-compose.yml
@@ -176,8 +183,8 @@ theme: terminal
 `
 
 func loadConfig(path string) (config, error) {
-	editor, mouse, quick, updates := "vim", true, true, "6h"
-	cfg := config{Roots: []string{"~"}, Editor: &editor, Mouse: &mouse, Quick: &quick, Updates: &updates, Filename: stackfs.ComposeName, Theme: ui.DefaultTheme}
+	editor, mouse, quick, updates, versions := "vim", true, true, "6h", true
+	cfg := config{Roots: []string{"~"}, Editor: &editor, Mouse: &mouse, Quick: &quick, Updates: &updates, Version: &versions, Filename: stackfs.ComposeName, Theme: ui.DefaultTheme}
 	if path == "" {
 		return cfg, nil
 	}
@@ -213,6 +220,9 @@ func loadConfig(path string) (config, error) {
 	}
 	if file.Quick != nil {
 		cfg.Quick = file.Quick
+	}
+	if file.Version != nil {
+		cfg.Version = file.Version
 	}
 	if file.Template != "" {
 		cfg.Template = expandHome(file.Template)
@@ -278,6 +288,31 @@ func versionString() string {
 	return "dev"
 }
 
+// selfUpdate replaces this binary with the latest release.
+func selfUpdate() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if exe, err = filepath.EvalSymlinks(exe); err != nil {
+		return err
+	}
+	current := versionString()
+	fmt.Printf("lazycompose %s at %s, looking for a newer release…\n", current, exe)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	tag, err := selfupdate.New().Update(ctx, current, exe)
+	if errors.Is(err, selfupdate.ErrUpToDate) {
+		fmt.Printf("already the latest release (%s)\n", tag)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("updated to %s\n", tag)
+	return nil
+}
+
 func main() {
 	var roots rootsFlag
 	configPath := flag.String("config", defaultConfigPath(), "config file")
@@ -285,11 +320,19 @@ func main() {
 	theme := flag.String("theme", "", "colour theme: "+strings.Join(ui.ThemeNames(), ", ")+" (overrides config)")
 	flag.Var(&roots, "root", "folder to scan, can be repeated or comma separated (overrides config)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	update := flag.Bool("update", false, "update lazycompose to the latest release and exit")
 	cdFile := flag.String("cd-file", "", "on quit to folder (Q), write the selected folder to this file")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("lazycompose", versionString())
+		return
+	}
+	if *update {
+		if err := selfUpdate(); err != nil {
+			fmt.Fprintln(os.Stderr, "lazycompose:", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -338,6 +381,10 @@ func main() {
 	}
 
 	every, _ := updateEvery(*cfg.Updates) // checked when loading the config
+	var latestVersion func(context.Context) (string, error)
+	if *cfg.Version {
+		latestVersion = selfupdate.New().Latest
+	}
 	host, _ := os.Hostname()
 	m := ui.New(ui.Options{
 		Hostname:    host,
@@ -355,6 +402,8 @@ func main() {
 		NewDotenv:   cfg.Dotenv,
 
 		NewComposeFilename: cfg.Filename,
+		Version:            versionString(),
+		LatestVersion:      latestVersion,
 	})
 
 	opts := []tea.ProgramOption{tea.WithAltScreen()}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -812,5 +813,29 @@ func TestUnpinKeepsCursorInQuickAccess(t *testing.T) {
 	}
 	if it, _ := m.list.selectedItem(); it.quick || it.env.Rel != "web/shop" {
 		t.Errorf("with the section empty the cursor should be on web/shop in the list, got %+v", it)
+	}
+}
+
+func TestNewVersionInHeader(t *testing.T) {
+	latest := func(context.Context) (string, error) { return "v0.4.0", nil }
+	m := New(Options{Hostname: "host", Roots: []string{"/srv"}, Envs: testEnvs(), Version: "v0.3.0", LatestVersion: latest})
+	m = send(m, tea.WindowSizeMsg{Width: 160, Height: 30})
+	if m.firstVersionCheck() == nil {
+		t.Fatal("a release build should look for new releases")
+	}
+	m = send(m, m.checkVersion()())
+	if h := ansi.Strip(m.headerView()); !strings.Contains(h, "v0.4.0 available, run lazycompose -update") {
+		t.Errorf("header = %q", h)
+	}
+
+	m = New(Options{Hostname: "host", Envs: testEnvs(), Version: "v0.4.0", LatestVersion: latest})
+	if m = send(m, m.checkVersion()()); m.newVersion != "" {
+		t.Error("the same version should not be mentioned")
+	}
+	if dev := New(Options{Version: "dev", LatestVersion: latest}); dev.firstVersionCheck() != nil {
+		t.Error("development builds should not look for releases")
+	}
+	if off := New(Options{Version: "v0.3.0"}); off.firstVersionCheck() != nil {
+		t.Error("version_check: false should not look")
 	}
 }

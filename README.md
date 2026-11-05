@@ -29,6 +29,11 @@ sudo install -m 755 lazycompose /usr/local/bin/lazycompose
 
 Each release also has a `checksums.txt` with SHA-256 sums.
 
+To update later, run `sudo lazycompose -update` (without `sudo` if the binary
+is somewhere you can write). It downloads the latest release, checks it
+against `checksums.txt` and replaces the binary. lazycompose also mentions a
+new release in its header, once a day.
+
 Or with Go 1.27 or newer:
 
 ```sh

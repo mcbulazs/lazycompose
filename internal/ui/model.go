@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"sort"
@@ -51,6 +52,11 @@ type Options struct {
 	// NewComposeFilename is the compose file name of new environments; ""
 	// means stackfs.ComposeName
 	NewComposeFilename string
+	// Version is this build's version, like v0.3.0
+	Version string
+	// LatestVersion looks up the latest release, to mention it in the
+	// header; nil never looks
+	LatestVersion func(context.Context) (string, error)
 	// UpdateEvery is how often to ask registries for newer images; 0 is never
 	UpdateEvery time.Duration
 	// QuickAccess shows the most used environments at the top of the list
@@ -107,9 +113,11 @@ type Model struct {
 	updating  *updateRun
 
 	focus  focus
-	zoomed bool        // only the focused pane is shown, full size
-	menu   *actionMenu // the keys window or the action menu, when open
-	recent []string    // actions run from the menu, newest first
+	zoomed bool // only the focused pane is shown, full size
+	// newVersion is a newer lazycompose release, shown in the header
+	newVersion string
+	menu       *actionMenu // the keys window or the action menu, when open
+	recent     []string    // actions run from the menu, newest first
 
 	width, height int
 	scanning      bool
@@ -182,9 +190,9 @@ func New(opts Options) Model {
 
 func (m Model) Init() tea.Cmd {
 	if m.scanning {
-		return tea.Batch(m.spin.Tick, rediscover(m.opts.Find), loadStates(), tick(pollEvery), startEvents(), m.firstUpdateCheck())
+		return tea.Batch(m.spin.Tick, rediscover(m.opts.Find), loadStates(), tick(pollEvery), startEvents(), m.firstUpdateCheck(), m.firstVersionCheck())
 	}
-	cmds := []tea.Cmd{loadStates(), loadServices(m.opts.Envs), tick(pollEvery), startEvents(), m.firstUpdateCheck()}
+	cmds := []tea.Cmd{loadStates(), loadServices(m.opts.Envs), tick(pollEvery), startEvents(), m.firstUpdateCheck(), m.firstVersionCheck()}
 	if c := m.selectCurrent(); c != nil {
 		cmds = append(cmds, c)
 	}
@@ -383,6 +391,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case oldImagesMsg:
 		return m, m.onOldImages(msg)
+
+	case versionTickMsg:
+		return m, m.checkVersion()
+
+	case versionMsg:
+		return m, m.onVersion(msg)
 
 	case tea.MouseMsg:
 		switch {
@@ -1407,7 +1421,11 @@ func (m Model) headerView() string {
 	if updates > 0 {
 		right += "  " + accentStyle.Render(fmt.Sprintf("↑ %d with updates", updates))
 	}
-	left := accentStyle.Render("lazycompose") + "  " + textStyle.Render(m.opts.Hostname) + "  "
+	left := accentStyle.Render("lazycompose") + "  "
+	if m.newVersion != "" {
+		left += yellowStyle.Render(m.newVersion+" available, run lazycompose -update") + "  "
+	}
+	left += textStyle.Render(m.opts.Hostname) + "  "
 	room := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 4
 	roots := strings.Join(m.opts.Roots, ", ")
 	if cut := lipgloss.Width(roots) - room; cut > 0 {

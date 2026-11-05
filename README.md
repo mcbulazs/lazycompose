@@ -65,6 +65,9 @@ every option. Set `roots` there to make the folder permanent.
 | `?` | Search all keys and the commands they run |
 | `:` | Search for an action and run it |
 
+Everything also works with the mouse: click a pane, a row, `? keys` or
+`: run` at the bottom, and the yes / no of a question.
+
 ## Documentation
 
 The full documentation is in the [wiki](https://github.com/mcbulazs/lazycompose/wiki):

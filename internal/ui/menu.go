@@ -403,23 +403,7 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		mn.cursor = max(0, min(len(mn.shown)-1, mn.cursor+m.menuRows()))
 		return m, nil
 	case tea.KeyEnter:
-		if mn.cursor >= len(mn.shown) {
-			return m, nil
-		}
-		en := mn.entries[mn.shown[mn.cursor]]
-		if !en.run {
-			if en.why != "" {
-				m.setStatus(en.why, true)
-			}
-			return m, nil
-		}
-		m.menu = nil
-		m.recent = append([]string{en.name}, slices.DeleteFunc(m.recent, func(s string) bool { return s == en.name })...)
-		if en.name == "new_env" {
-			// its key is also the next match while searching the logs
-			return m, m.startCreate()
-		}
-		return m.handleKey(en.key)
+		return m.runMenuEntry()
 	}
 	// the key that opened the window closes it again
 	if mn.input.Value() == "" && (mn.all && key.Matches(msg, keys.Help) || !mn.all && key.Matches(msg, keys.Commands)) {
@@ -433,6 +417,69 @@ func (m Model) handleMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		mn.filter()
 	}
 	return m, cmd
+}
+
+// runMenuEntry runs the selected entry and closes the menu.
+func (m Model) runMenuEntry() (tea.Model, tea.Cmd) {
+	mn := m.menu
+	if mn.cursor >= len(mn.shown) {
+		return m, nil
+	}
+	en := mn.entries[mn.shown[mn.cursor]]
+	if !en.run {
+		if en.why != "" {
+			m.setStatus(en.why, true)
+		}
+		return m, nil
+	}
+	m.menu = nil
+	m.recent = append([]string{en.name}, slices.DeleteFunc(m.recent, func(s string) bool { return s == en.name })...)
+	if en.name == "new_env" {
+		// its key is also the next match while searching the logs
+		return m, m.startCreate()
+	}
+	return m.handleKey(en.key)
+}
+
+// menuBox is where the window is on screen: its top left corner and size.
+func (m Model) menuBox() (x, y, w, h int) {
+	w, h = m.menuSize()
+	return (m.width - w) / 2, max((m.height-h)/2, 1), w, h
+}
+
+// handleMenuMouse scrolls with the wheel, selects an entry on click and
+// runs it on a second click. A click outside closes the window.
+func (m Model) handleMenuMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	mn := m.menu
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		mn.cursor = max(0, mn.cursor-1)
+	case tea.MouseButtonWheelDown:
+		mn.cursor = max(0, min(len(mn.shown)-1, mn.cursor+1))
+	case tea.MouseButtonLeft:
+		x, y, w, h := m.menuBox()
+		if msg.X < x || msg.X >= x+w || msg.Y < y || msg.Y >= y+h {
+			m.menu = nil
+			return m, nil
+		}
+		// the top border, the search line and a blank line, then the entries
+		row := msg.Y - y - 3
+		if row < 0 || row >= m.menuRows() {
+			return m, nil
+		}
+		i := mn.offset + row
+		if i >= len(mn.shown) {
+			return m, nil
+		}
+		if i == mn.cursor {
+			return m.runMenuEntry()
+		}
+		mn.cursor = i
+	}
+	return m, nil
 }
 
 // menuSize is the width and height of the window.
@@ -528,7 +575,6 @@ func (m Model) withMenu(view string) string {
 	if m.menu == nil {
 		return view
 	}
-	box := m.menuView()
-	w, _ := m.menuSize()
-	return overlay(view, box, (m.width-w)/2, max((m.height-lipgloss.Height(box))/2, 1))
+	x, y, _, _ := m.menuBox()
+	return overlay(view, m.menuView(), x, y)
 }

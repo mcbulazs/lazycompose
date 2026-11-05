@@ -385,8 +385,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.onOldImages(msg)
 
 	case tea.MouseMsg:
-		if m.prompt != nil || m.menu != nil {
-			return m, nil
+		switch {
+		case m.prompt != nil:
+			return m.handlePromptMouse(msg)
+		case m.menu != nil:
+			return m.handleMenuMouse(msg)
 		}
 		return m.handleMouse(msg)
 
@@ -1424,7 +1427,7 @@ func (m Model) statusView() string {
 	case m.searching:
 		s = m.searchInput.View()
 	case m.confirm != nil:
-		s = confirmStyle.Render(m.confirm.prompt)
+		s = m.confirmView()
 	case m.busy > 0:
 		s = m.spin.View() + " " + textStyle.Render(m.status)
 	case m.statusErr:
@@ -1439,12 +1442,10 @@ func (m Model) statusView() string {
 // everything else.
 func (m Model) footerView() string {
 	var parts []string
-	for _, b := range []key.Binding{keys.Help, keys.Commands, keys.Filter, keys.Quit} {
-		if b.Enabled() {
-			parts = append(parts, accentStyle.Render(b.Help().Key)+" "+dimStyle.Render(b.Help().Desc))
-		}
+	for _, b := range footerItems() {
+		parts = append(parts, accentStyle.Render(b.Help().Key)+" "+dimStyle.Render(b.Help().Desc))
 	}
-	return " " + ansi.Truncate(strings.Join(parts, dimStyle.Render(" • ")), m.width-2, "…")
+	return " " + ansi.Truncate(strings.Join(parts, dimStyle.Render(footerSep)), m.width-2, "…")
 }
 
 // paneKey is the "[1] " prefix of a pane title, showing the key that jumps to

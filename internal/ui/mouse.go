@@ -24,6 +24,9 @@ func (m Model) paneAt(x, y int) (focus, int, bool) {
 }
 
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if next, cmd, ok := m.handleBarClick(msg); ok {
+		return next, cmd
+	}
 	if m.confirm != nil || m.filtering {
 		return m, nil
 	}

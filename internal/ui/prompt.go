@@ -91,8 +91,27 @@ func (m Model) withPrompt(view string) string {
 	if m.prompt == nil {
 		return view
 	}
-	w := min(max(m.width*2/3, 40), m.width-4)
-	box := m.prompt.view(w)
-	y := max((m.height-lipgloss.Height(box))/2-2, 1)
-	return overlay(view, box, (m.width-w)/2, y)
+	x, y, _, box := m.promptBox()
+	return overlay(view, box, x, y)
+}
+
+// promptBox is where the prompt is on screen: its top left corner, width,
+// and the box itself.
+func (m Model) promptBox() (x, y, w int, box string) {
+	w = min(max(m.width*2/3, 40), m.width-4)
+	box = m.prompt.view(w)
+	return (m.width - w) / 2, max((m.height-lipgloss.Height(box))/2-2, 1), w, box
+}
+
+// handlePromptMouse cancels the prompt on a click outside it.
+func (m Model) handlePromptMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return m, nil
+	}
+	x, y, w, box := m.promptBox()
+	if msg.X < x || msg.X >= x+w || msg.Y < y || msg.Y >= y+lipgloss.Height(box) {
+		m.prompt = nil
+		m.setStatus("cancelled", false)
+	}
+	return m, nil
 }

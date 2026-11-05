@@ -20,19 +20,26 @@ stop, restart, pull, edit and tail logs without leaving the terminal.
 
 ## Install
 
-Download a release binary (Linux amd64; use `arm64` for ARM boards):
+On Linux (x86_64 or ARM64):
 
 ```sh
-curl -fsSL https://github.com/mcbulazs/lazycompose/releases/latest/download/lazycompose_linux_amd64.tar.gz | tar -xz lazycompose
-sudo install -m 755 lazycompose /usr/local/bin/lazycompose
+curl -fsSL https://raw.githubusercontent.com/mcbulazs/lazycompose/main/install.sh | sh
 ```
 
-Each release also has a `checksums.txt` with SHA-256 sums.
+It downloads the release for your machine, checks it against the release's
+`checksums.txt` and installs it into `/usr/local/bin`, using `sudo` if
+needed. Add `-s -- -b ~/.local/bin` after `sh` to install somewhere else, or
+`-s -- -v v0.4.0` for a given version. You can read
+[install.sh](install.sh) first.
 
 To update later, run `sudo lazycompose -update` (without `sudo` if the binary
 is somewhere you can write). It downloads the latest release, checks it
 against `checksums.txt` and replaces the binary. lazycompose also mentions a
 new release in its header, once a day.
+
+By hand: download `lazycompose_linux_amd64.tar.gz` (or `arm64`) from the
+[latest release](https://github.com/mcbulazs/lazycompose/releases/latest),
+unpack it and put `lazycompose` in your `PATH`.
 
 Or with Go 1.27 or newer:
 

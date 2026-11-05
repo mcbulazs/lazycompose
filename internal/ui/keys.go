@@ -16,7 +16,7 @@ type keyMap struct {
 	FocusEnvs, FocusServices, FocusLogs      key.Binding
 	Filter, Problems                         key.Binding
 	Edit, EditEnv                            key.Binding
-	NewEnv, MoveEnv                          key.Binding
+	NewEnv, MoveEnv, Pin                     key.Binding
 	Start, Stop, Restart, Recreate, Toggle   key.Binding
 	Pull, UpdateAll                          key.Binding
 	Logs, Shell, Folder, Refresh, Help, Quit key.Binding
@@ -45,6 +45,7 @@ var actions = []action{
 	{"edit_env", []string{"E"}, "edit env file", func(k *keyMap) *key.Binding { return &k.EditEnv }},
 	{"new_env", []string{"n"}, "new environment", func(k *keyMap) *key.Binding { return &k.NewEnv }},
 	{"move_env", []string{"m"}, "move/rename", func(k *keyMap) *key.Binding { return &k.MoveEnv }},
+	{"pin", []string{"f"}, "pin/unpin", func(k *keyMap) *key.Binding { return &k.Pin }},
 	{"up", []string{"u"}, "up -d", func(k *keyMap) *key.Binding { return &k.Start }},
 	{"down", []string{"d"}, "down", func(k *keyMap) *key.Binding { return &k.Stop }},
 	{"restart", []string{"r"}, "restart", func(k *keyMap) *key.Binding { return &k.Restart }},
@@ -179,7 +180,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.MoveUp, k.MoveDown, k.NextPane, k.FocusEnvs, k.FocusServices, k.FocusLogs},
-		{k.Filter, k.Problems, k.Edit, k.EditEnv, k.NewEnv, k.MoveEnv, k.Refresh},
+		{k.Filter, k.Problems, k.Edit, k.EditEnv, k.NewEnv, k.MoveEnv, k.Pin, k.Refresh},
 		{k.Start, k.Stop, k.Restart, k.Recreate, k.Toggle},
 		{k.Pull, k.UpdateAll, k.Logs, k.Shell, k.Folder},
 		{k.Help, k.Quit, k.QuitToFolder},

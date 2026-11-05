@@ -20,12 +20,17 @@ const (
 )
 
 type envItem struct {
-	env   discover.Env
-	group string
-	quick bool // a copy shown in the quick access section
+	env    discover.Env
+	group  string
+	quick  bool // a copy shown in the quick access section
+	pinned bool // pinned, shown with a star in the quick access section
 }
 
-const quickGroup = "quick access"
+const (
+	quickGroup  = "quick access"
+	pinnedGroup = "pinned" // the section when quick access is off
+	pinMark     = "★"
+)
 
 // envList is the left pane: environments grouped by parent folder.
 type envList struct {
@@ -62,9 +67,9 @@ func newEnvList(envs []discover.Env, multiRoot bool) envList {
 	return l
 }
 
-// setQuick shows copies of dirs, in order, in a quick access section at the
-// top of the list.
-func (l *envList) setQuick(dirs []string) {
+// setQuick shows copies of dirs, in order, in a section called group at
+// the top of the list. The dirs in pinned get a star.
+func (l *envList) setQuick(dirs []string, group string, pinned func(string) bool) {
 	prev, hadPrev := l.selectedItem()
 	var rest []envItem
 	byDir := map[string]envItem{}
@@ -77,7 +82,7 @@ func (l *envList) setQuick(dirs []string) {
 	var items []envItem
 	for _, d := range dirs {
 		if it, ok := byDir[d]; ok {
-			items = append(items, envItem{env: it.env, group: quickGroup, quick: true})
+			items = append(items, envItem{env: it.env, group: group, quick: true, pinned: pinned(d)})
 		}
 	}
 	l.items = append(items, rest...)
@@ -258,18 +263,21 @@ func (l envList) view(w, h int, focused bool, counts countFunc, hasUpdate func(d
 		if it.group != "" {
 			indent = "  "
 		}
+		if it.pinned {
+			indent = accentStyle.Render(pinMark) + " "
+		}
 		count := fmt.Sprintf("%d/%d", running, total)
 		mark := ""
 		if hasUpdate(it.env.Dir) {
 			mark = updateMark + " "
 		}
-		nameW := w - len(indent) - 2 - len(count) - lipgloss.Width(mark) - 1
+		nameW := w - lipgloss.Width(indent) - 2 - len(count) - lipgloss.Width(mark) - 1
 		label := it.env.Name()
 		if it.quick {
 			label = it.env.Rel
 		}
 		name := ansi.Truncate(label, max(nameW, 1), "…")
-		gap := strings.Repeat(" ", max(1, w-len(indent)-2-lipgloss.Width(name)-lipgloss.Width(mark)-len(count)))
+		gap := strings.Repeat(" ", max(1, w-lipgloss.Width(indent)-2-lipgloss.Width(name)-lipgloss.Width(mark)-len(count)))
 
 		if ln.pos == l.cursor {
 			st := selectedRow

@@ -747,3 +747,46 @@ func TestQuickAccessAfterScan(t *testing.T) {
 		t.Errorf("after the first scan the cursor should be on quick access web/shop, got %+v", it)
 	}
 }
+
+func TestPin(t *testing.T) {
+	h := history.Load("")
+	h.Record("/srv/web/shop", time.Now())
+	m := New(Options{Hostname: "host", Roots: []string{"/srv"}, Envs: testEnvs(), QuickAccess: true, History: h})
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// games/mc in the main list: pinning shows it first right away
+	m = send(m, press("j", "j")...)
+	if selected(m) != "games/mc" {
+		t.Fatalf("selected %q, want games/mc", selected(m))
+	}
+	m = send(m, press("f")...)
+	want := "games/mc,web/shop,plex,games/mc,web/blog,web/shop"
+	if got := strings.Join(visible(m), ","); got != want {
+		t.Errorf("visible = %v, want %v", got, want)
+	}
+	if it, _ := m.list.selectedItem(); it.quick || it.env.Rel != "games/mc" {
+		t.Errorf("the cursor should stay on games/mc in the main list, got %+v", it)
+	}
+	if !strings.Contains(ansi.Strip(m.View()), pinMark+" ● games/mc") && !strings.Contains(ansi.Strip(m.View()), pinMark+" ○ games/mc") {
+		t.Errorf("a pinned env should get a star:\n%s", ansi.Strip(m.View()))
+	}
+	if len(h.Uses["/srv/games/mc"]) != 0 {
+		t.Error("pinning should not count as a use")
+	}
+
+	// with quick access off only the pins show
+	off := New(Options{Hostname: "host", Roots: []string{"/srv"}, Envs: testEnvs(), History: h})
+	off = send(off, tea.WindowSizeMsg{Width: 120, Height: 30})
+	if got := strings.Join(visible(off), ","); got != "games/mc,plex,games/mc,web/blog,web/shop" {
+		t.Errorf("quick access off: visible = %v", got)
+	}
+	if v := ansi.Strip(off.View()); !strings.Contains(v, pinnedGroup) {
+		t.Errorf("the section should be called %q:\n%s", pinnedGroup, v)
+	}
+
+	// f again unpins
+	m = send(m, press("f")...)
+	if h.Pinned("/srv/games/mc") || strings.Join(visible(m), ",") != "web/shop,plex,games/mc,web/blog,web/shop" {
+		t.Errorf("after unpinning: pins %v, visible %v", h.Pins, visible(m))
+	}
+}

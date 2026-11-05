@@ -738,6 +738,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.NewEnv) && !(m.focus == focusLogs && m.search.active()):
 		return m, m.startCreate()
 
+	case key.Matches(msg, keys.Pin):
+		m.togglePin()
+		return m, m.onSelect()
+
 	case key.Matches(msg, keys.MoveEnv):
 		return m, m.startMove()
 
@@ -881,17 +885,42 @@ func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return nm, cmd
 }
 
-// updateQuick fills the quick access section from the history. It runs on
-// start and after a rescan only, so the list does not move while in use.
+// updateQuick fills the quick access section with the pinned environments
+// and the most used ones. It runs on start, after a rescan and after a pin
+// changes, so the list does not move while in use.
 func (m *Model) updateQuick() {
-	if !m.opts.QuickAccess || m.opts.History == nil {
+	h := m.opts.History
+	if h == nil {
 		return
 	}
 	dirs := make([]string, len(m.opts.Envs))
 	for i, e := range m.opts.Envs {
 		dirs[i] = e.Dir
 	}
-	m.list.setQuick(m.opts.History.Top(dirs, quickSize, time.Now()))
+	group := quickGroup
+	if !m.opts.QuickAccess {
+		group = pinnedGroup
+	}
+	m.list.setQuick(h.Quick(dirs, quickSize, time.Now(), m.opts.QuickAccess), group, h.Pinned)
+}
+
+// togglePin pins or unpins the selected environment.
+func (m *Model) togglePin() {
+	e, ok := m.selectedEnv()
+	h := m.opts.History
+	if !ok || h == nil {
+		return
+	}
+	status := "unpinned " + e.Rel
+	if h.TogglePin(e.Dir) {
+		status = "pinned " + e.Rel
+	}
+	if err := h.Save(); err != nil {
+		m.setStatus("saving history: "+err.Error(), true)
+		return
+	}
+	m.updateQuick()
+	m.setStatus(status, false)
 }
 
 func (m *Model) recordUse(e discover.Env) {

@@ -75,3 +75,41 @@ func TestLoadMissingOrBroken(t *testing.T) {
 		t.Error("missing file should give an empty history")
 	}
 }
+
+func TestPins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.json")
+	h := Load(path)
+	now := time.Now()
+	for _, d := range []string{"/a", "/b", "/c", "/d"} {
+		h.Record(d, now)
+	}
+	h.Record("/a", now) // most used
+
+	if !h.TogglePin("/c") || !h.TogglePin("/gone") || !h.TogglePin("/b") {
+		t.Fatal("pinning should report pinned")
+	}
+	dirs := []string{"/a", "/b", "/c", "/d", "/e"}
+	if got, want := h.Quick(dirs, 3, now, true), []string{"/c", "/b", "/a"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Quick = %v, want pins first, then by use: %v", got, want)
+	}
+	if got, want := h.Quick(dirs, 5, now, false), []string{"/c", "/b"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Quick without use = %v, want only pins %v", got, want)
+	}
+	if got := h.Quick(dirs, 1, now, true); len(got) != 2 {
+		t.Errorf("all pins should show even past n, got %v", got)
+	}
+
+	if h.TogglePin("/c") || h.Pinned("/c") {
+		t.Error("toggling again should unpin")
+	}
+	h.Move("/b", "/b2")
+	if !h.Pinned("/b2") || h.Pinned("/b") {
+		t.Error("the pin should follow a move")
+	}
+	if err := h.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if got := Load(path).Pins; !reflect.DeepEqual(got, []string{"/gone", "/b2"}) {
+		t.Errorf("loaded pins %v", got)
+	}
+}

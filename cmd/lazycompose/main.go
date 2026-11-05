@@ -98,7 +98,8 @@ mouse: true
 
 # Show up to 5 environments you use most, by how often and how recently, at
 # the top of the list. Running an action on an environment counts as a use.
-# The history is kept in ~/.local/state/lazycompose/history.json.
+# Environments pinned with f always show first, with a star, even when this
+# is off. Uses and pins are kept in ~/.local/state/lazycompose/history.json.
 quick_access: true
 
 # How often to ask the image registries whether a newer image exists for a
@@ -153,7 +154,7 @@ theme: terminal
 #   focus_environments: "1"   focus_services: "2"     focus_logs: "3"
 #   filter: /                 problems: "!"
 #   edit: e                   edit_env: E
-#   new_env: n                move_env: m
+#   new_env: n                move_env: m             pin: f
 #   up: u                    down: d                 stop_start: s
 #   restart: r                recreate: R
 #   pull: p                   update_all: U

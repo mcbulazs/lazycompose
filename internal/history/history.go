@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 )
@@ -15,7 +16,8 @@ const keep = 10
 
 type History struct {
 	path string
-	Uses map[string][]time.Time `json:"uses"` // env dir -> newest first
+	Uses map[string][]time.Time `json:"uses"`           // env dir -> newest first
+	Pins []string               `json:"pins,omitempty"` // pinned env dirs, in pin order
 }
 
 // DefaultPath is $XDG_STATE_HOME/lazycompose/history.json, or
@@ -44,8 +46,11 @@ func Load(path string) *History {
 		return h
 	}
 	var saved History
-	if json.Unmarshal(b, &saved) == nil && saved.Uses != nil {
-		h.Uses = saved.Uses
+	if json.Unmarshal(b, &saved) == nil {
+		if saved.Uses != nil {
+			h.Uses = saved.Uses
+		}
+		h.Pins = saved.Pins
 	}
 	return h
 }
@@ -59,12 +64,57 @@ func (h *History) Record(dir string, t time.Time) {
 	h.Uses[dir] = uses
 }
 
-// Move carries the uses of dir over to its new place.
+// Move carries the uses and the pin of dir over to its new place.
 func (h *History) Move(from, to string) {
 	if uses, ok := h.Uses[from]; ok {
 		h.Uses[to] = uses
 		delete(h.Uses, from)
 	}
+	for i, d := range h.Pins {
+		if d == from {
+			h.Pins[i] = to
+		}
+	}
+}
+
+// Pinned reports whether dir is pinned.
+func (h *History) Pinned(dir string) bool {
+	return slices.Contains(h.Pins, dir)
+}
+
+// TogglePin pins dir, or unpins it if it is pinned, and reports whether it
+// is pinned now.
+func (h *History) TogglePin(dir string) bool {
+	if i := slices.Index(h.Pins, dir); i >= 0 {
+		h.Pins = slices.Delete(h.Pins, i, i+1)
+		return false
+	}
+	h.Pins = append(h.Pins, dir)
+	return true
+}
+
+// Quick returns the dirs for the quick access section: the pinned ones in
+// pin order, then, if byUse is set, the most used ones until there are n.
+// Pins of folders that are not in dirs are kept but not returned.
+func (h *History) Quick(dirs []string, n int, now time.Time, byUse bool) []string {
+	var out []string
+	for _, p := range h.Pins {
+		if slices.Contains(dirs, p) {
+			out = append(out, p)
+		}
+	}
+	if !byUse {
+		return out
+	}
+	for _, d := range h.Top(dirs, n+len(out), now) {
+		if len(out) >= n {
+			break
+		}
+		if !h.Pinned(d) {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // Save writes the history, creating its folder.

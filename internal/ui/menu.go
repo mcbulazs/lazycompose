@@ -57,6 +57,8 @@ var menuInfos = map[string]menuInfo{
 	"recreate":           {"Force recreate the containers (asks first)", "force", false},
 	"pull":               {"Pull newer images", "download update", false},
 	"update_all":         {"Update every running environment (asks first)", "upgrade everything", false},
+	"clean_images":       {"Remove old images that no container uses (asks first)", "prune clean disk space untagged dangling delete", false},
+	"zoom":               {"Make the focused pane full screen, or back", "fullscreen maximize enlarge", false},
 	"logs":               {"Fetch the logs again", "output follow", false},
 	"shell":              {"Open a shell in the selected service", "exec bash sh terminal container", false},
 	"folder_shell":       {"Open your shell in the environment's folder", "terminal cd tmux", false},
@@ -177,7 +179,7 @@ func recentRank(recent []string, name string) int {
 // short and in full, or why it cannot run.
 func (m Model) commandFor(name, why string) (short, full, reason string) {
 	e, svc, ok := m.target()
-	needsEnv := !slices.Contains([]string{"filter", "problems", "new_env", "update_all", "refresh", "quit", "commands", "help"}, name) && !menuInfos[name].nav
+	needsEnv := !slices.Contains([]string{"filter", "problems", "new_env", "update_all", "clean_images", "zoom", "refresh", "quit", "commands", "help"}, name) && !menuInfos[name].nav
 	if !ok {
 		if needsEnv && why == "" {
 			why = "no environment selected"
@@ -254,6 +256,8 @@ func (m Model) commandFor(name, why string) (short, full, reason string) {
 		return sh + " (in the folder)", shellJoin([]string{sh}) + " in " + shellQuote(e.Dir), why
 	case "update_all":
 		return "docker compose pull -q, up -d (each running env)", "for each running environment: docker compose -f FILE pull -q, then docker compose -f FILE up -d", why
+	case "clean_images":
+		return "docker image rm (old images)", "docker image rm, after listing the untagged images no container uses", why
 	case "move_env":
 		return "", "", why
 	}

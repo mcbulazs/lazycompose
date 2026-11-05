@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Project runs docker compose for a single compose file.
@@ -423,4 +424,69 @@ func dockerOutput(ctx context.Context, args ...string) ([]byte, error) {
 		return out, wrap(err, stderr.Bytes())
 	}
 	return out, nil
+}
+
+// OldImage is an untagged image no container uses: usually the previous
+// version of an image, left behind by a pull.
+type OldImage struct {
+	ID      string
+	Repo    string // the repository it was pulled from, "" if unknown
+	Size    int64
+	Created time.Time
+}
+
+// OldImages lists the untagged images that no container, running or not,
+// uses.
+func OldImages(ctx context.Context) ([]OldImage, error) {
+	out, err := dockerOutput(ctx, "image", "ls", "-q", "--no-trunc", "--filter", "dangling=true")
+	if err != nil {
+		return nil, err
+	}
+	ids := strings.Fields(string(out))
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	used := map[string]bool{}
+	out, err = dockerOutput(ctx, "ps", "-aq", "--no-trunc")
+	if err != nil {
+		return nil, err
+	}
+	if containers := strings.Fields(string(out)); len(containers) > 0 {
+		// a container removed meanwhile makes docker exit with an error,
+		// but it still prints the others
+		out, _ = dockerOutput(ctx, append([]string{"inspect", "--format", "{{.Image}}"}, containers...)...)
+		for _, id := range strings.Fields(string(out)) {
+			used[id] = true
+		}
+	}
+	format := `{{.Id}}{{"\t"}}{{json .RepoDigests}}{{"\t"}}{{.Size}}{{"\t"}}{{.Created}}`
+	out, _ = dockerOutput(ctx, append([]string{"image", "inspect", "--format", format}, ids...)...)
+	return ParseOldImages(out, used), nil
+}
+
+// ParseOldImages parses lines of image id, RepoDigests as JSON, size and
+// creation time, leaving out the images in used.
+func ParseOldImages(out []byte, used map[string]bool) []OldImage {
+	var res []OldImage
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) != 4 || used[f[0]] || !strings.HasPrefix(f[0], "sha256:") {
+			continue
+		}
+		img := OldImage{ID: f[0]}
+		var digests []string
+		if json.Unmarshal([]byte(f[1]), &digests) == nil && len(digests) > 0 {
+			img.Repo, _, _ = strings.Cut(digests[0], "@")
+		}
+		img.Size, _ = strconv.ParseInt(f[2], 10, 64)
+		img.Created, _ = time.Parse(time.RFC3339Nano, f[3])
+		res = append(res, img)
+	}
+	sort.SliceStable(res, func(i, j int) bool {
+		if res[i].Repo != res[j].Repo {
+			return res[i].Repo < res[j].Repo
+		}
+		return res[i].Created.After(res[j].Created)
+	})
+	return res
 }

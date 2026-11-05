@@ -10,6 +10,9 @@ func (m Model) paneAt(x, y int) (focus, int, bool) {
 		return 0, 0, false
 	}
 	row := y - 1
+	if m.zoomed {
+		return m.focus, row, true
+	}
 	if x < m.leftWidth() {
 		return focusEnvs, row, true
 	}

@@ -107,6 +107,7 @@ type Model struct {
 	updating  *updateRun
 
 	focus  focus
+	zoomed bool        // only the focused pane is shown, full size
 	menu   *actionMenu // the keys window or the action menu, when open
 	recent []string    // actions run from the menu, newest first
 
@@ -379,6 +380,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+
+	case oldImagesMsg:
+		return m, m.onOldImages(msg)
 
 	case tea.MouseMsg:
 		if m.prompt != nil || m.menu != nil {
@@ -844,6 +848,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.UpdateAll):
 		return m, m.startUpdateAll()
 
+	case key.Matches(msg, keys.CleanImages):
+		return m, m.startCleanup()
+
+	case key.Matches(msg, keys.Zoom):
+		m.zoomed = !m.zoomed
+		m.layout()
+		return m, nil
+
 	case msg.String() == "esc":
 		if m.problemsOnly {
 			m.problemsOnly = false
@@ -855,6 +867,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filter.SetValue("")
 			m.list.setFilter("")
 			return m, m.onSelect()
+		}
+		if m.zoomed {
+			m.zoomed = false
+			m.layout()
 		}
 		return m, nil
 
@@ -1255,15 +1271,19 @@ func (m *Model) layout() {
 		return
 	}
 	rightW := m.width - m.leftWidth()
-	inner := rightW - 4
 	sh := m.servicesHeight()
+	logsH := m.bodyHeight() - sh
+	if m.zoomed {
+		rightW, sh, logsH = m.width, m.bodyHeight(), m.bodyHeight()
+	}
+	inner := rightW - 4
 
 	m.table.SetColumns(columns(inner, m.table.Rows()))
 	m.table.SetWidth(inner)
 	m.table.SetHeight(max(sh-2, 2))
 
 	m.logs.Width = inner
-	m.logs.Height = max(m.bodyHeight()-sh-2, 1)
+	m.logs.Height = max(logsH-2, 1)
 	if len(m.logLines) > 0 {
 		m.renderLogs()
 	}
@@ -1282,6 +1302,16 @@ func (m Model) View() string {
 	lw := m.leftWidth()
 	rw := m.width - lw
 	sh := m.servicesHeight()
+	logsH := body - sh
+	if m.zoomed {
+		lw, rw, sh, logsH = m.width, m.width, body, body
+	}
+	zoomNote := func(title string) string {
+		if m.zoomed {
+			return title + " · zoomed, " + keys.Zoom.Help().Key + " to go back"
+		}
+		return title
+	}
 
 	listH := m.listHeight()
 	envTitle := paneKey(keys.FocusEnvs) + "Environments"
@@ -1301,7 +1331,7 @@ func (m Model) View() string {
 	} else {
 		listBody += m.list.view(lw-4, listH, m.focus == focusEnvs, m.counts, m.hasUpdate)
 	}
-	left := pane(envTitle, listBody, lw, body, m.focus == focusEnvs)
+	left := pane(zoomNote(envTitle), listBody, lw, body, m.focus == focusEnvs)
 
 	svcTitle := paneKey(keys.FocusServices) + "Services"
 	if e, ok := m.selectedEnv(); ok {
@@ -1313,7 +1343,7 @@ func (m Model) View() string {
 	} else {
 		svcBody = m.table.View()
 	}
-	services := pane(svcTitle, svcBody, rw, sh, m.focus == focusServices)
+	services := pane(zoomNote(svcTitle), svcBody, rw, sh, m.focus == focusServices)
 
 	logTitle := paneKey(keys.FocusLogs) + m.logTitle
 	if m.stream != nil {
@@ -1326,10 +1356,19 @@ func (m Model) View() string {
 			logTitle += fmt.Sprintf(" · /%s no matches", s.query)
 		}
 	}
-	logs := pane(logTitle, m.logs.View(), rw, body-sh, m.focus == focusLogs)
+	logs := pane(zoomNote(logTitle), m.logs.View(), rw, logsH, m.focus == focusLogs)
 
-	right := lipgloss.JoinVertical(lipgloss.Left, services, logs)
-	main := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	var main string
+	switch {
+	case !m.zoomed:
+		main = lipgloss.JoinHorizontal(lipgloss.Top, left, lipgloss.JoinVertical(lipgloss.Left, services, logs))
+	case m.focus == focusEnvs:
+		main = left
+	case m.focus == focusServices:
+		main = services
+	default:
+		main = logs
+	}
 
 	return m.withMenu(m.withPrompt(lipgloss.JoinVertical(lipgloss.Left, header, main, m.statusView(), footer)))
 }

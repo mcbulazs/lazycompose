@@ -21,6 +21,7 @@ type keyMap struct {
 	Pull, UpdateAll                          key.Binding
 	Logs, Shell, Folder, Refresh, Help, Quit key.Binding
 	QuitToFolder, Commands                   key.Binding
+	CleanImages, Zoom                        key.Binding
 }
 
 // action is a key binding as it is named in the config file.
@@ -53,9 +54,11 @@ var actions = []action{
 	{"stop_start", []string{"s"}, "stop/start service", func(k *keyMap) *key.Binding { return &k.Toggle }},
 	{"pull", []string{"p"}, "pull", func(k *keyMap) *key.Binding { return &k.Pull }},
 	{"update_all", []string{"U"}, "update all", func(k *keyMap) *key.Binding { return &k.UpdateAll }},
+	{"clean_images", []string{"P"}, "remove old images", func(k *keyMap) *key.Binding { return &k.CleanImages }},
 	{"logs", []string{"l"}, "fetch logs", func(k *keyMap) *key.Binding { return &k.Logs }},
 	{"shell", []string{"x"}, "shell", func(k *keyMap) *key.Binding { return &k.Shell }},
 	{"folder_shell", []string{"X"}, "shell in folder", func(k *keyMap) *key.Binding { return &k.Folder }},
+	{"zoom", []string{"z"}, "zoom pane", func(k *keyMap) *key.Binding { return &k.Zoom }},
 	{"refresh", []string{"ctrl+r"}, "refresh", func(k *keyMap) *key.Binding { return &k.Refresh }},
 	{"commands", []string{":"}, "run", func(k *keyMap) *key.Binding { return &k.Commands }},
 	{"help", []string{"?"}, "keys", func(k *keyMap) *key.Binding { return &k.Help }},

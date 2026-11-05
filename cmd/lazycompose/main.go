@@ -164,9 +164,10 @@ theme: terminal
 #   new_env: n                move_env: m             pin: f
 #   up: u                    down: d                 stop_start: s
 #   restart: r                recreate: R
-#   pull: p                   update_all: U
+#   pull: p                   update_all: U           clean_images: P
 #   logs: l                   shell: x                folder_shell: X
-#   refresh: ctrl+r           help: "?"               commands: ":"
+#   zoom: z                   refresh: ctrl+r
+#   help: "?"                 commands: ":"
 #   quit: q                   quit_to_folder: Q
 #
 # keys:

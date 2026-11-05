@@ -85,6 +85,14 @@ func (m *Model) followLogs(e discover.Env, svc string) tea.Cmd {
 // runAction runs a docker compose command with its output streamed into the
 // log pane.
 func (m *Model) runAction(e discover.Env, busy, label string, args ...string) tea.Cmd {
+	return m.runStream(busy, label, func(id int) (*logStream, tea.Cmd) {
+		return startAction(id, e, args...)
+	})
+}
+
+// runStream runs a command started by start, showing its output in the log
+// pane with label as the first line.
+func (m *Model) runStream(busy, label string, start func(id int) (*logStream, tea.Cmd)) tea.Cmd {
 	spin := m.startBusy(busy)
 	m.stopLogs()
 	if !m.holdOutput {
@@ -98,7 +106,7 @@ func (m *Model) runAction(e discover.Env, busy, label string, args ...string) te
 	m.appendLog(dimStyle.Render("$ " + label))
 
 	m.streamID++
-	s, cmd := startAction(m.streamID, e, args...)
+	s, cmd := start(m.streamID)
 	if m.actions == nil {
 		m.actions = map[int]*actionRun{}
 	}

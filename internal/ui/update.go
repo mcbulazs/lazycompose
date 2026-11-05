@@ -87,7 +87,7 @@ func (m *Model) onUpdate(msg updateMsg) tea.Cmd {
 	m.appendLog(dimStyle.Render("-- press any key to go back to the logs --"))
 	m.setStatus(summary, u.failed > 0)
 	m.updating = nil
-	return tea.Batch(m.refreshNow(), m.recheckUpdates())
+	return tea.Batch(m.refreshNow(), m.recheckUpdates(), findOldImages(true))
 }
 
 // lastLine returns the last non-empty line; docker puts the actual error last.

@@ -54,6 +54,8 @@ every option. Set `roots` there to make the folder permanent.
 | `u` / `d` | `up -d` / `down` |
 | `r` / `R` | Restart / force recreate |
 | `p` / `U` | Pull / update all running stacks |
+| `P` | Remove old images left behind by pulls (asks first) |
+| `z` | Zoom the focused pane to full screen |
 | `n` / `m` | New environment / move or rename it |
 | `f` | Pin to the top of the list |
 | `e` / `E` | Edit the compose file / `.env` |

@@ -228,6 +228,13 @@ func startAction(id int, e discover.Env, args ...string) (*logStream, tea.Cmd) {
 	return startStream(id, ctx, cancel, project(e).Command(ctx, args...))
 }
 
+// startDocker runs a docker command and streams its output, like
+// startAction.
+func startDocker(id int, args ...string) (*logStream, tea.Cmd) {
+	ctx, cancel := context.WithCancel(context.Background())
+	return startStream(id, ctx, cancel, exec.CommandContext(ctx, "docker", args...))
+}
+
 // startStream sends the stdout and stderr of cmd line by line. The process
 // starts when the returned command runs, not before.
 func startStream(id int, ctx context.Context, cancel context.CancelFunc, cmd *exec.Cmd) (*logStream, tea.Cmd) {

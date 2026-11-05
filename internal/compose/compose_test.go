@@ -3,6 +3,7 @@ package compose
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -228,5 +229,25 @@ func TestParseServiceImages(t *testing.T) {
 	}
 	if got := digests["sha256:bbb"]; len(got) != 0 {
 		t.Errorf("a locally built image should have no digests, got %v", got)
+	}
+}
+
+func TestParseOldImages(t *testing.T) {
+	out := "sha256:aaa\t[\"nginx@sha256:111\"]\t45000000\t2026-10-01T10:00:00.123Z\n" +
+		"sha256:bbb\t[]\t1000\t2026-09-01T10:00:00Z\n" +
+		"sha256:ccc\t[\"redis@sha256:222\"]\t9000\t2026-08-01T10:00:00Z\n" +
+		"sha256:ddd\t[\"nginx@sha256:333\"]\t44000000\t2026-10-20T10:00:00Z\n" +
+		"Error: No such image: sha256:eee\n"
+	got := ParseOldImages([]byte(out), map[string]bool{"sha256:ccc": true})
+	var ids []string
+	for _, img := range got {
+		ids = append(ids, img.ID)
+	}
+	// unknown repo first, then by repo, newest first; used ones left out
+	if strings.Join(ids, ",") != "sha256:bbb,sha256:ddd,sha256:aaa" {
+		t.Fatalf("ids = %v", ids)
+	}
+	if got[1].Repo != "nginx" || got[1].Size != 44000000 || got[1].Created.Day() != 20 {
+		t.Errorf("parsed %+v", got[1])
 	}
 }

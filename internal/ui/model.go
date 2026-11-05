@@ -90,20 +90,23 @@ type Model struct {
 
 	logs viewport.Model
 	// lineStart is the first wrapped row of each log line
-	lineStart   []int
-	logTarget   logTarget // what the log stream follows
-	pendingLogs logTarget // waiting for the selection to settle
-	autoID      int
-	holdOutput  bool           // keep command output until a key is pressed
-	outputKeys  map[string]int // progress line positions in command output
-	actions     map[int]*actionRun
-	search      logSearch
-	searching   bool
-	searchInput textinput.Model
-	logLines    []string
-	logTitle    string
-	stream      *logStream
-	streamID    int
+	lineStart []int
+	logTarget logTarget // what the log stream follows
+	paneMode  paneMode  // the log pane shows logs or the compose file
+	// composeTarget is the compose file shown in compose mode
+	composeTarget logTarget
+	pendingLogs   logTarget // waiting for the selection to settle
+	autoID        int
+	holdOutput    bool           // keep command output until a key is pressed
+	outputKeys    map[string]int // progress line positions in command output
+	actions       map[int]*actionRun
+	search        logSearch
+	searching     bool
+	searchInput   textinput.Model
+	logLines      []string
+	logTitle      string
+	stream        *logStream
+	streamID      int
 
 	spin      spinner.Model
 	busy      int
@@ -173,6 +176,9 @@ func New(opts Options) Model {
 	}
 	m.updateQuick()
 	m.list.cursor = 0 // start on the most used environment
+	if opts.History != nil && opts.History.Pane == modeCompose.name() {
+		m.paneMode = modeCompose
+	}
 	if e, ok := m.list.selected(); ok {
 		m.current = e.Dir
 		m.loadingPS = true
@@ -544,7 +550,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.pendingLogs = logTarget{}
-		if m.holdOutput {
+		if m.holdOutput || m.paneMode == modeCompose {
 			return m, nil
 		}
 		if e, svc, ok := m.wantedLogs(); ok {
@@ -553,6 +559,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case editorMsg:
+		m.composeTarget = logTarget{} // show the file as it is now
 		if msg.err != nil {
 			m.setStatus("editor: "+msg.err.Error(), true)
 			return m, nil
@@ -891,7 +898,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case key.Matches(msg, keys.ComposeView):
+		if m.paneMode == modeCompose {
+			m.setPaneMode(modeLogs)
+		} else {
+			m.setPaneMode(modeCompose)
+		}
+		return m, nil
+
 	case key.Matches(msg, keys.Refresh):
+		m.composeTarget = logTarget{} // read the compose file again
 		cmd := m.refreshNow()
 		if m.opts.Find != nil {
 			return m, tea.Batch(cmd, m.startBusy("rescanning"), rediscover(m.opts.Find))
@@ -1027,6 +1043,9 @@ func (m Model) envAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, keys.Logs):
+		if m.paneMode == modeCompose {
+			m.setPaneMode(modeLogs) // fetching logs means wanting to see them
+		}
 		m.holdOutput = false
 		return m, m.followLogs(e, svc)
 
@@ -1362,7 +1381,7 @@ func (m Model) View() string {
 	}
 	services := pane(zoomNote(svcTitle), svcBody, rw, sh, m.focus == focusServices)
 
-	logTitle := paneKey(keys.FocusLogs) + m.logTitle
+	logTitle := m.logTitle
 	if m.stream != nil {
 		logTitle += " (following)"
 	}
@@ -1373,7 +1392,12 @@ func (m Model) View() string {
 			logTitle += fmt.Sprintf(" · /%s no matches", s.query)
 		}
 	}
-	logs := pane(zoomNote(logTitle), m.logs.View(), rw, logsH, m.focus == focusLogs)
+	var logs string
+	if m.holdOutput {
+		logs = pane(zoomNote(paneKey(keys.FocusLogs)+logTitle), m.logs.View(), rw, logsH, m.focus == focusLogs)
+	} else {
+		logs = paneStyled(m.logTabsTitle(zoomNote(logTitle), rw), m.logs.View(), rw, logsH, m.focus == focusLogs)
+	}
 
 	var main string
 	switch {

@@ -11,7 +11,7 @@ stop, restart, pull, edit and tail logs without leaving the terminal.
 - Every folder with a compose file is an environment, grouped by parent folder
 - Live status from `docker events`, with unhealthy and crashed stacks in red
 - Services with state, health, CPU, memory, ports, image and uptime
-- Logs that follow the selection, with search
+- Logs that follow the selection, with search, or the compose file instead
 - Edit the compose or `.env` file, validated before it is applied
 - Update all running stacks with one key, and a `↑` on services with a newer image
 - Quick access to the stacks you use most, and pins for the ones you always want
@@ -61,6 +61,7 @@ every option. Set `roots` there to make the folder permanent.
 | `p` / `U` | Pull / update all running stacks |
 | `P` | Remove old images left behind by pulls (asks first) |
 | `z` | Zoom the focused pane to full screen |
+| `v` | Show the compose file in the log pane, or the logs again |
 | `n` / `m` | New environment / move or rename it |
 | `f` | Pin to the top of the list |
 | `e` / `E` | Edit the compose file / `.env` |

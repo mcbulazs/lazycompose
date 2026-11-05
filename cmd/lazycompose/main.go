@@ -173,7 +173,7 @@ theme: terminal
 #   restart: r                recreate: R
 #   pull: p                   update_all: U           clean_images: P
 #   logs: l                   shell: x                folder_shell: X
-#   zoom: z                   refresh: ctrl+r
+#   zoom: z                   compose_view: v         refresh: ctrl+r
 #   help: "?"                 commands: ":"
 #   quit: q                   quit_to_folder: Q
 #

@@ -63,6 +63,17 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseButtonLeft:
 		m.focus = pane
 		m.setTableStyles()
+		// the Logs and Compose tabs in the log pane's top border
+		if pane == focusLogs && row == 0 && !m.holdOutput {
+			paneX := m.leftWidth()
+			if m.zoomed {
+				paneX = 0
+			}
+			if mode, ok := logTabAt(msg.X, paneX); ok && mode != m.paneMode {
+				m.setPaneMode(mode)
+			}
+			return m, nil
+		}
 		switch pane {
 		case focusEnvs:
 			// the top border holds the title, then the filter line if shown

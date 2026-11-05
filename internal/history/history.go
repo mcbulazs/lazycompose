@@ -18,6 +18,7 @@ type History struct {
 	path string
 	Uses map[string][]time.Time `json:"uses"`           // env dir -> newest first
 	Pins []string               `json:"pins,omitempty"` // pinned env dirs, in pin order
+	Pane string                 `json:"pane,omitempty"` // what the log pane showed last: logs or compose
 }
 
 // DefaultPath is $XDG_STATE_HOME/lazycompose/history.json, or
@@ -51,6 +52,7 @@ func Load(path string) *History {
 			h.Uses = saved.Uses
 		}
 		h.Pins = saved.Pins
+		h.Pane = saved.Pane
 	}
 	return h
 }

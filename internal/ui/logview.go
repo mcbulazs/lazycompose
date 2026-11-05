@@ -39,14 +39,20 @@ func (m Model) wantedLogs() (discover.Env, string, bool) {
 		return e, m.selectedService(), true
 	case focusLogs:
 		// reading the logs should not switch them
-		if m.logTarget.dir == e.Dir {
-			return e, m.logTarget.service, true
+		shown := m.logTarget
+		if m.paneMode == modeCompose {
+			shown = m.composeTarget
+		}
+		if shown.dir == e.Dir {
+			return e, shown.service, true
 		}
 	}
 	return e, "", true
 }
 
-// scheduleLogs fetches logs for the selection once it has settled.
+// scheduleLogs fetches logs for the selection once it has settled. In
+// compose mode it shows the compose file right away instead, since reading
+// a file is quick.
 func (m *Model) scheduleLogs() tea.Cmd {
 	if m.holdOutput || m.width == 0 {
 		return nil
@@ -56,6 +62,12 @@ func (m *Model) scheduleLogs() tea.Cmd {
 		return nil
 	}
 	want := logTarget{dir: e.Dir, service: svc}
+	if m.paneMode == modeCompose {
+		if want != m.composeTarget {
+			m.showCompose(e, svc)
+		}
+		return nil
+	}
 	if want == m.logTarget || want == m.pendingLogs {
 		return nil
 	}
@@ -150,6 +162,24 @@ func (m *Model) releaseOutput(msg tea.KeyMsg) {
 	m.holdOutput = false
 	m.logTarget = logTarget{}
 	m.pendingLogs = logTarget{}
+	m.composeTarget = logTarget{}
+}
+
+// setPaneMode switches the log pane between logs and the compose file, and
+// remembers the choice for next time.
+func (m *Model) setPaneMode(p paneMode) {
+	m.paneMode = p
+	m.stopLogs()
+	m.holdOutput = false
+	m.pendingLogs = logTarget{}
+	m.composeTarget = logTarget{}
+	m.setLogPlaceholder()
+	if h := m.opts.History; h != nil {
+		h.Pane = p.name()
+		if err := h.Save(); err != nil {
+			m.setStatus("saving history: "+err.Error(), true)
+		}
+	}
 }
 
 // Docker redraws progress in place on a terminal, but into a pipe it writes

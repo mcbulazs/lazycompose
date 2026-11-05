@@ -21,7 +21,7 @@ type keyMap struct {
 	Pull, UpdateAll                          key.Binding
 	Logs, Shell, Folder, Refresh, Help, Quit key.Binding
 	QuitToFolder, Commands                   key.Binding
-	CleanImages, Zoom                        key.Binding
+	CleanImages, Zoom, ComposeView           key.Binding
 }
 
 // action is a key binding as it is named in the config file.
@@ -59,6 +59,7 @@ var actions = []action{
 	{"shell", []string{"x"}, "shell", func(k *keyMap) *key.Binding { return &k.Shell }},
 	{"folder_shell", []string{"X"}, "shell in folder", func(k *keyMap) *key.Binding { return &k.Folder }},
 	{"zoom", []string{"z"}, "zoom pane", func(k *keyMap) *key.Binding { return &k.Zoom }},
+	{"compose_view", []string{"v"}, "logs / compose file", func(k *keyMap) *key.Binding { return &k.ComposeView }},
 	{"refresh", []string{"ctrl+r"}, "refresh", func(k *keyMap) *key.Binding { return &k.Refresh }},
 	{"commands", []string{":"}, "run", func(k *keyMap) *key.Binding { return &k.Commands }},
 	{"help", []string{"?"}, "keys", func(k *keyMap) *key.Binding { return &k.Help }},

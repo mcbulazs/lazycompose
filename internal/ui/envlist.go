@@ -92,6 +92,17 @@ func (l *envList) setQuick(dirs []string, group string, pinned func(string) bool
 	}
 }
 
+// quickCount is how many quick access entries are shown; they come first.
+func (l envList) quickCount() int {
+	n := 0
+	for _, idx := range l.visible {
+		if l.items[idx].quick {
+			n++
+		}
+	}
+	return n
+}
+
 func (l *envList) setFilter(q string) {
 	prev, hadPrev := l.selectedItem()
 	l.query = q

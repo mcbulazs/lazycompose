@@ -790,3 +790,27 @@ func TestPin(t *testing.T) {
 		t.Errorf("after unpinning: pins %v, visible %v", h.Pins, visible(m))
 	}
 }
+
+func TestUnpinKeepsCursorInQuickAccess(t *testing.T) {
+	h := history.Load("")
+	for _, d := range []string{"/srv/plex", "/srv/web/blog", "/srv/web/shop"} {
+		h.TogglePin(d)
+	}
+	m := New(Options{Hostname: "host", Roots: []string{"/srv"}, Envs: testEnvs(), QuickAccess: true, History: h})
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// unpin all three in a row from the top of the section
+	for i, want := range []string{"web/blog", "web/shop"} {
+		m = send(m, press("f")...)
+		if it, _ := m.list.selectedItem(); !it.quick || it.env.Rel != want {
+			t.Fatalf("after unpin %d the cursor should be on quick access %s, got %+v", i+1, want, it)
+		}
+	}
+	m = send(m, press("f")...)
+	if len(h.Pins) != 0 {
+		t.Fatalf("pins left: %v", h.Pins)
+	}
+	if it, _ := m.list.selectedItem(); it.quick || it.env.Rel != "web/shop" {
+		t.Errorf("with the section empty the cursor should be on web/shop in the list, got %+v", it)
+	}
+}

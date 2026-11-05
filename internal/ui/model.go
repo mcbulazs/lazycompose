@@ -916,7 +916,16 @@ func (m *Model) togglePin() {
 		m.setStatus("saving history: "+err.Error(), true)
 		return
 	}
+	before, _ := m.list.selectedItem()
+	pos := m.list.cursor
 	m.updateQuick()
+	// unpinned in the section: stay there, on the next one, so several can
+	// be unpinned in a row
+	if now, _ := m.list.selectedItem(); before.quick && !now.quick {
+		if n := m.list.quickCount(); n > 0 {
+			m.list.cursor = min(pos, n-1)
+		}
+	}
 	m.setStatus(status, false)
 }
 

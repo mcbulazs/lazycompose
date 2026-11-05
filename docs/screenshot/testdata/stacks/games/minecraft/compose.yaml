@@ -1,0 +1,6 @@
+name: shot-minecraft
+services:
+  minecraft:
+    image: itzg/minecraft-server:java21
+    command: sleep infinity
+    ports: ["25565:25565"]

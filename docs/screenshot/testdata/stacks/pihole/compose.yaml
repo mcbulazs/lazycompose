@@ -1,0 +1,7 @@
+name: shot-pihole
+services:
+  pihole:
+    image: pihole/pihole:2024.07
+    command: sh -c 'echo "[i] FTL started"; while :; do echo "query[A] example.com from 192.168.1.20"; sleep 3; done'
+    ports: ["8053:80"]
+    healthcheck: {test: ["CMD", "true"], interval: 2s}

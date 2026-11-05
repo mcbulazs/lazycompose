@@ -1,0 +1,13 @@
+name: shot-stack
+services:
+  grafana:
+    image: grafana/grafana:11.3
+    command: sleep infinity
+    ports: ["3000:3000"]
+  prometheus:
+    image: prom/prometheus:v2.55
+    command: sleep infinity
+    ports: ["9090:9090"]
+  node-exporter:
+    image: prom/node-exporter:v1.8
+    command: sleep infinity

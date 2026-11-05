@@ -1,0 +1,37 @@
+name: shot-nextcloud
+services:
+  app:
+    image: nextcloud:30-apache
+    ports: ["8443:80"]
+    depends_on: [db, redis]
+    command:
+      - sh
+      - -c
+      - |
+        echo "AH00094: Command line: 'apache2 -D FOREGROUND'"
+        i=0
+        while :; do
+          i=$$((i+1))
+          ip="192.168.1.$$((20 + i % 5))"
+          echo "$$ip - admin \"GET /index.php/apps/files/ HTTP/1.1\" 200 1532"; sleep 1
+          echo "$$ip - admin \"PROPFIND /remote.php/dav/files/admin/ HTTP/1.1\" 207 4410"; sleep 1
+          echo "$$ip - admin \"PUT /remote.php/dav/files/admin/Photos/IMG_$$((4100 + i)).jpg HTTP/1.1\" 201 0"; sleep 1
+          echo "$$ip - admin \"GET /ocs/v2.php/apps/notifications/api/v2/notifications HTTP/1.1\" 200 98"; sleep 1
+        done
+  db:
+    image: postgres:16-alpine
+    healthcheck: {test: ["CMD", "true"], interval: 2s}
+    command:
+      - sh
+      - -c
+      - |
+        echo "LOG:  database system is ready to accept connections"
+        while :; do sleep 7; echo "LOG:  checkpoint complete: wrote 42 buffers (0.3%)"; done
+  redis:
+    image: redis:7-alpine
+    command:
+      - sh
+      - -c
+      - |
+        echo "* Ready to accept connections tcp"
+        while :; do sleep 9; echo "* 100 changes in 300 seconds. Saving..."; echo "* DB saved on disk"; done

@@ -43,12 +43,13 @@ var skipDirs = map[string]bool{
 	"testdata":     true,
 }
 
-func skip(path string, d fs.DirEntry) bool {
-	name := d.Name()
+// Skips reports whether scanning skips the folder at path: hidden folders,
+// node_modules, vendor, testdata and the Go module cache.
+func Skips(path string) bool {
+	name := filepath.Base(path)
 	if strings.HasPrefix(name, ".") || skipDirs[name] {
 		return true
 	}
-	// Go module cache
 	return name == "mod" && filepath.Base(filepath.Dir(path)) == "pkg"
 }
 
@@ -79,7 +80,7 @@ func Find(roots []string, maxDepth int) ([]Env, error) {
 			if !d.IsDir() {
 				return nil
 			}
-			if path != root && skip(path, d) {
+			if path != root && Skips(path) {
 				return fs.SkipDir
 			}
 

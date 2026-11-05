@@ -59,6 +59,14 @@ func (h *History) Record(dir string, t time.Time) {
 	h.Uses[dir] = uses
 }
 
+// Move carries the uses of dir over to its new place.
+func (h *History) Move(from, to string) {
+	if uses, ok := h.Uses[from]; ok {
+		h.Uses[to] = uses
+		delete(h.Uses, from)
+	}
+}
+
 // Save writes the history, creating its folder.
 func (h *History) Save() error {
 	if h.path == "" {

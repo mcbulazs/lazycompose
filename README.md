@@ -15,6 +15,7 @@ stop, restart, pull, edit and tail logs without leaving the terminal.
 - Edit the compose or `.env` file, validated before it is applied
 - Update all running stacks with one key, and a `↑` on services with a newer image
 - Quick access to the stacks you use most
+- Create, move and rename stacks from the app
 - Themes, configurable keys, mouse support
 
 ## Install
@@ -53,6 +54,7 @@ every option. Set `roots` there to make the folder permanent.
 | `u` / `d` | `up -d` / `down` |
 | `r` / `R` | Restart / force recreate |
 | `p` / `U` | Pull / update all running stacks |
+| `n` / `m` | New environment / move or rename it |
 | `e` / `E` | Edit the compose file / `.env` |
 | `x` / `X` | Shell in the container / in the folder |
 | `/` | Filter, or search the logs |

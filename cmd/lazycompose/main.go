@@ -25,6 +25,8 @@ type config struct {
 	Mouse    *bool                        `yaml:"mouse"`
 	Quick    *bool                        `yaml:"quick_access"`
 	Updates  *string                      `yaml:"update_check"`
+	Template string                       `yaml:"new_env_template"`
+	Dotenv   bool                         `yaml:"new_env_create_dotenv"`
 	Theme    string                       `yaml:"theme"`
 	Themes   map[string]map[string]string `yaml:"themes"`
 	Colors   map[string]string            `yaml:"colors"`
@@ -105,6 +107,13 @@ quick_access: true
 # limit. Private registries are skipped. Set it to 0 to turn it off.
 update_check: 6h
 
+# New environments (the n key) get a docker-compose.yml from this file. Left
+# out, they get a starter with one service. "~" works here too.
+# new_env_template: ~/stacks/template.yml
+
+# Also create an empty .env file in new environments.
+new_env_create_dotenv: false
+
 # Colour theme. Built in: terminal, onedark, tokyonight, catppuccin, gruvbox
 # and nord. "terminal" uses your terminal's own colours; the others use fixed
 # colours. The terminal background is never changed.
@@ -144,7 +153,8 @@ theme: terminal
 #   focus_environments: "1"   focus_services: "2"     focus_logs: "3"
 #   filter: /                 problems: "!"
 #   edit: e                   edit_env: E
-#   up: u                     down: d                 stop_start: s
+#   new_env: n                move_env: m
+#   up: u                    down: d                 stop_start: s
 #   restart: r                recreate: R
 #   pull: p                   update_all: U
 #   logs: l                   shell: x                folder_shell: X
@@ -195,6 +205,10 @@ func loadConfig(path string) (config, error) {
 	if file.Quick != nil {
 		cfg.Quick = file.Quick
 	}
+	if file.Template != "" {
+		cfg.Template = expandHome(file.Template)
+	}
+	cfg.Dotenv = file.Dotenv
 	if file.Updates != nil {
 		if _, err := updateEvery(*file.Updates); err != nil {
 			return cfg, fmt.Errorf("%s: update_check: %w", path, err)
@@ -319,6 +333,9 @@ func main() {
 		QuickAccess: *cfg.Quick,
 		History:     history.Load(history.DefaultPath()),
 		UpdateEvery: every,
+		MaxDepth:    cfg.MaxDepth,
+		NewTemplate: cfg.Template,
+		NewDotenv:   cfg.Dotenv,
 	})
 
 	opts := []tea.ProgramOption{tea.WithAltScreen()}

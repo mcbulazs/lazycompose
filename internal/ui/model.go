@@ -41,6 +41,13 @@ type Options struct {
 	CdFile string
 	// Mouse is set when the program runs with mouse support
 	Mouse bool
+	// MaxDepth is the scan depth, so new folders are placed where the scan
+	// finds them; 0 is no limit
+	MaxDepth int
+	// NewTemplate is a compose file to start new environments from
+	NewTemplate string
+	// NewDotenv creates an empty env file in new environments
+	NewDotenv bool
 	// UpdateEvery is how often to ask registries for newer images; 0 is never
 	UpdateEvery time.Duration
 	// QuickAccess shows the most used environments at the top of the list
@@ -111,6 +118,8 @@ type Model struct {
 	eventsTried    time.Time
 
 	upd updateState
+
+	prompt *pathPrompt
 
 	problemsOnly  bool
 	loadingStates bool
@@ -378,6 +387,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 
 	case tea.MouseMsg:
+		if m.prompt != nil {
+			return m, nil
+		}
 		return m.handleMouse(msg)
 
 	case spinner.TickMsg:
@@ -387,6 +399,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
+
+	case moveDoneMsg:
+		return m, m.moveDone(msg)
 
 	case updateTickMsg, updatesCheckedMsg:
 		return m.handleUpdates(msg)
@@ -649,6 +664,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	if m.prompt != nil {
+		return m.handlePromptKey(msg)
+	}
+
 	m.releaseOutput(msg)
 
 	if m.confirm != nil {
@@ -714,6 +733,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stopLogs()
 		m.events.stop()
 		return m, tea.Quit
+
+	// n is also the next match while searching the logs
+	case key.Matches(msg, keys.NewEnv) && !(m.focus == focusLogs && m.search.active()):
+		return m, m.startCreate()
+
+	case key.Matches(msg, keys.MoveEnv):
+		return m, m.startMove()
 
 	case key.Matches(msg, keys.Help):
 		m.showHelp = !m.showHelp
@@ -1270,7 +1296,7 @@ func (m Model) View() string {
 	right := lipgloss.JoinVertical(lipgloss.Left, services, logs)
 	main := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, main, m.statusView(), footer)
+	return m.withPrompt(lipgloss.JoinVertical(lipgloss.Left, header, main, m.statusView(), footer))
 }
 
 func (m Model) headerView() string {

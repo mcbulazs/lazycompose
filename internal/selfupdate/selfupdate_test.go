@@ -122,6 +122,24 @@ func TestUpdate(t *testing.T) {
 	if _, err := c.Update(context.Background(), "dev", exe); err == nil || !strings.Contains(err.Error(), "development build") {
 		t.Errorf("a development build should not update, got %v", err)
 	}
+	if _, err := c.Update(context.Background(), "v0.3.0", "/usr/bin/lazycompose"); err == nil || !strings.Contains(err.Error(), "package manager") {
+		t.Errorf("a packaged binary should not update, got %v", err)
+	}
+}
+
+func TestManaged(t *testing.T) {
+	for exe, want := range map[string]bool{
+		"/usr/bin/lazycompose":                       true,
+		"/bin/lazycompose":                           true,
+		"/nix/store/abc-lazycompose/bin/lazycompose": true,
+		"/usr/local/bin/lazycompose":                 false,
+		"/home/me/.local/bin/lazycompose":            false,
+		"/usr/bin/sub/lazycompose":                   false,
+	} {
+		if got := Managed(exe); got != want {
+			t.Errorf("Managed(%q) = %v, want %v", exe, got, want)
+		}
+	}
 }
 
 func TestUpdateRefusesBadDownloads(t *testing.T) {

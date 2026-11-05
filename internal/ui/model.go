@@ -57,6 +57,9 @@ type Options struct {
 	// LatestVersion looks up the latest release, to mention it in the
 	// header; nil never looks
 	LatestVersion func(context.Context) (string, error)
+	// UpdateHint says how to update, after the new version in the header;
+	// "" means "run lazycompose -update"
+	UpdateHint string
 	// UpdateEvery is how often to ask registries for newer images; 0 is never
 	UpdateEvery time.Duration
 	// QuickAccess shows the most used environments at the top of the list
@@ -1447,7 +1450,11 @@ func (m Model) headerView() string {
 	}
 	left := accentStyle.Render("lazycompose") + "  "
 	if m.newVersion != "" {
-		left += yellowStyle.Render(m.newVersion+" available, run lazycompose -update") + "  "
+		hint := m.opts.UpdateHint
+		if hint == "" {
+			hint = "run lazycompose -update"
+		}
+		left += yellowStyle.Render(m.newVersion+" available, "+hint) + "  "
 	}
 	left += textStyle.Render(m.opts.Hostname) + "  "
 	room := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 4

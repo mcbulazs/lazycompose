@@ -828,6 +828,13 @@ func TestNewVersionInHeader(t *testing.T) {
 		t.Errorf("header = %q", h)
 	}
 
+	m = New(Options{Hostname: "host", Envs: testEnvs(), Version: "v0.3.0", LatestVersion: latest, UpdateHint: "update it with your package manager"})
+	m = send(m, tea.WindowSizeMsg{Width: 160, Height: 30})
+	m = send(m, m.checkVersion()())
+	if h := ansi.Strip(m.headerView()); !strings.Contains(h, "v0.4.0 available, update it with your package manager") {
+		t.Errorf("header with a hint = %q", h)
+	}
+
 	m = New(Options{Hostname: "host", Envs: testEnvs(), Version: "v0.4.0", LatestVersion: latest})
 	if m = send(m, m.checkVersion()()); m.newVersion != "" {
 		t.Error("the same version should not be mentioned")

@@ -289,6 +289,19 @@ func versionString() string {
 }
 
 // selfUpdate replaces this binary with the latest release.
+// updateHint says how to update in the header: with -update, or with the
+// package manager that installed the binary.
+func updateHint() string {
+	exe, err := os.Executable()
+	if err == nil {
+		exe, err = filepath.EvalSymlinks(exe)
+	}
+	if err == nil && selfupdate.Managed(exe) {
+		return "update it with your package manager"
+	}
+	return ""
+}
+
 func selfUpdate() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -404,6 +417,7 @@ func main() {
 		NewComposeFilename: cfg.Filename,
 		Version:            versionString(),
 		LatestVersion:      latestVersion,
+		UpdateHint:         updateHint(),
 	})
 
 	opts := []tea.ProgramOption{tea.WithAltScreen()}

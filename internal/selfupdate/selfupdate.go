@@ -148,6 +148,17 @@ func (c *Client) Latest(ctx context.Context) (string, error) {
 	return tag, nil
 }
 
+// Managed reports whether the binary at exe belongs to a package manager
+// (in /usr/bin, /bin or the nix store). Replacing it would go behind the
+// package manager's back, so those are updated with it instead.
+func Managed(exe string) bool {
+	switch filepath.Dir(exe) {
+	case "/usr/bin", "/bin", "/usr/sbin", "/sbin":
+		return true
+	}
+	return strings.HasPrefix(exe, "/nix/store/")
+}
+
 // AssetName is the release archive for this system.
 func (c *Client) AssetName() (string, error) {
 	if c.GOOS != "linux" || (c.GOARCH != "amd64" && c.GOARCH != "arm64") {
@@ -163,6 +174,9 @@ func (c *Client) AssetName() (string, error) {
 func (c *Client) Update(ctx context.Context, current, exe string) (string, error) {
 	if !IsRelease(current) {
 		return "", fmt.Errorf("this is a development build (%s), not a release; install a release first, see the README", current)
+	}
+	if Managed(exe) {
+		return "", fmt.Errorf("%s was installed by a package manager; update it with that instead", exe)
 	}
 	asset, err := c.AssetName()
 	if err != nil {

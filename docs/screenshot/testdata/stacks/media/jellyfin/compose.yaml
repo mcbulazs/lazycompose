@@ -2,6 +2,7 @@ name: shot-jellyfin
 services:
   jellyfin:
     image: jellyfin/jellyfin:10.10
+    init: true
     command: sh -c 'echo "[INF] Startup complete"; sleep infinity'
     ports: ["8096:8096"]
     healthcheck: {test: ["CMD", "true"], interval: 2s}

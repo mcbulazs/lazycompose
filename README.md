@@ -13,7 +13,8 @@ stop, restart, pull, edit and tail logs without leaving the terminal.
 - Services with state, health, CPU, memory, ports, image and uptime
 - Logs that follow the selection, with search
 - Edit the compose or `.env` file, validated before it is applied
-- Update all running stacks with one key
+- Update all running stacks with one key, and a `↑` on services with a newer image
+- Quick access to the stacks you use most
 - Themes, configurable keys, mouse support
 
 ## Install

@@ -22,7 +22,10 @@ const (
 type envItem struct {
 	env   discover.Env
 	group string
+	quick bool // a copy shown in the quick access section
 }
+
+const quickGroup = "quick access"
 
 // envList is the left pane: environments grouped by parent folder.
 type envList struct {
@@ -59,13 +62,42 @@ func newEnvList(envs []discover.Env, multiRoot bool) envList {
 	return l
 }
 
+// setQuick shows copies of dirs, in order, in a quick access section at the
+// top of the list.
+func (l *envList) setQuick(dirs []string) {
+	prev, hadPrev := l.selectedItem()
+	var rest []envItem
+	byDir := map[string]envItem{}
+	for _, it := range l.items {
+		if !it.quick {
+			rest = append(rest, it)
+			byDir[it.env.Dir] = it
+		}
+	}
+	var items []envItem
+	for _, d := range dirs {
+		if it, ok := byDir[d]; ok {
+			items = append(items, envItem{env: it.env, group: quickGroup, quick: true})
+		}
+	}
+	l.items = append(items, rest...)
+	l.setFilter(l.query)
+	if hadPrev {
+		l.selectItem(prev)
+	}
+}
+
 func (l *envList) setFilter(q string) {
-	prev, hadPrev := l.selected()
+	prev, hadPrev := l.selectedItem()
 	l.query = q
 	q = strings.ToLower(q)
 	l.visible = l.visible[:0]
 	for i, it := range l.items {
 		if l.only != nil && !l.only[it.env.Dir] {
+			continue
+		}
+		// the section would only repeat matches while filtering
+		if it.quick && (q != "" || l.only != nil) {
 			continue
 		}
 		if q == "" || strings.Contains(strings.ToLower(it.group+"/"+it.env.Name()), q) {
@@ -74,20 +106,40 @@ func (l *envList) setFilter(q string) {
 	}
 	l.cursor = 0
 	if hadPrev {
-		for i, idx := range l.visible {
-			if l.items[idx].env.Dir == prev.Dir {
-				l.cursor = i
-			}
-		}
+		l.selectItem(prev)
 	}
 	l.offset = 0
 }
 
-func (l envList) selected() (discover.Env, bool) {
-	if l.cursor < 0 || l.cursor >= len(l.visible) {
-		return discover.Env{}, false
+// selectItem moves the cursor to it, or to another copy of its env.
+func (l *envList) selectItem(it envItem) {
+	found := false
+	for i, idx := range l.visible {
+		c := l.items[idx]
+		if c.env.Dir != it.env.Dir {
+			continue
+		}
+		if c.quick == it.quick {
+			l.cursor = i
+			return
+		}
+		if !found {
+			l.cursor = i
+			found = true
+		}
 	}
-	return l.items[l.visible[l.cursor]].env, true
+}
+
+func (l envList) selectedItem() (envItem, bool) {
+	if l.cursor < 0 || l.cursor >= len(l.visible) {
+		return envItem{}, false
+	}
+	return l.items[l.visible[l.cursor]], true
+}
+
+func (l envList) selected() (discover.Env, bool) {
+	it, ok := l.selectedItem()
+	return it.env, ok
 }
 
 func (l *envList) move(n int) {
@@ -99,18 +151,23 @@ func (l *envList) move(n int) {
 
 type listLine struct {
 	header string
-	pos    int // position in visible, -1 for headers
+	quick  bool // the quick access header
+	pos    int  // position in visible, -1 for headers and blank lines
 }
 
 func (l envList) lines() []listLine {
 	var out []listLine
-	group := ""
+	group, inQuick := "", false
 	for pos, idx := range l.visible {
 		it := l.items[idx]
-		if it.group != "" && it.group != group {
-			out = append(out, listLine{header: it.group, pos: -1})
+		if inQuick && !it.quick {
+			out = append(out, listLine{pos: -1}) // blank line after the section
+			group = ""
 		}
-		group = it.group
+		if it.group != "" && (it.group != group || it.quick != inQuick) {
+			out = append(out, listLine{header: it.group, quick: it.quick, pos: -1})
+		}
+		group, inQuick = it.group, it.quick
 		out = append(out, listLine{pos: pos})
 	}
 	return out
@@ -170,7 +227,7 @@ func dot(s envStatus, problems int) string {
 	}
 }
 
-func (l envList) view(w, h int, focused bool, counts countFunc) string {
+func (l envList) view(w, h int, focused bool, counts countFunc, hasUpdate func(dir string) bool) string {
 	if len(l.visible) == 0 {
 		if l.query != "" {
 			return dimStyle.Render("no matches")
@@ -186,7 +243,12 @@ func (l envList) view(w, h int, focused bool, counts countFunc) string {
 			b.WriteByte('\n')
 		}
 		if ln.pos == -1 {
-			b.WriteString(groupStyle.Render(ansi.Truncate(ln.header+"/", w, "…")))
+			switch {
+			case ln.quick:
+				b.WriteString(groupStyle.Render(ansi.Truncate(ln.header, w, "…")))
+			case ln.header != "":
+				b.WriteString(groupStyle.Render(ansi.Truncate(ln.header+"/", w, "…")))
+			}
 			continue
 		}
 		it := l.items[l.visible[ln.pos]]
@@ -197,16 +259,24 @@ func (l envList) view(w, h int, focused bool, counts countFunc) string {
 			indent = "  "
 		}
 		count := fmt.Sprintf("%d/%d", running, total)
-		nameW := w - len(indent) - 2 - len(count) - 1
-		name := ansi.Truncate(it.env.Name(), max(nameW, 1), "…")
-		gap := strings.Repeat(" ", max(1, w-len(indent)-2-lipgloss.Width(name)-len(count)))
+		mark := ""
+		if hasUpdate(it.env.Dir) {
+			mark = updateMark + " "
+		}
+		nameW := w - len(indent) - 2 - len(count) - lipgloss.Width(mark) - 1
+		label := it.env.Name()
+		if it.quick {
+			label = it.env.Rel
+		}
+		name := ansi.Truncate(label, max(nameW, 1), "…")
+		gap := strings.Repeat(" ", max(1, w-len(indent)-2-lipgloss.Width(name)-lipgloss.Width(mark)-len(count)))
 
 		if ln.pos == l.cursor {
 			st := selectedRow
 			if !focused {
 				st = lipgloss.NewStyle().Foreground(colText).Bold(true)
 			}
-			row := indent + dot(statusOf(running, total), problems) + " " + st.Render(name+gap+count)
+			row := indent + dot(statusOf(running, total), problems) + " " + st.Render(name+gap+mark+count)
 			b.WriteString(row)
 			continue
 		}
@@ -217,7 +287,10 @@ func (l envList) view(w, h int, focused bool, counts countFunc) string {
 		if problems > 0 {
 			countStyle = redStyle
 		}
-		b.WriteString(indent + dot(statusOf(running, total), problems) + " " + textStyle.Render(name) + gap + countStyle.Render(count))
+		if mark != "" {
+			mark = accentStyle.Render(updateMark) + " "
+		}
+		b.WriteString(indent + dot(statusOf(running, total), problems) + " " + textStyle.Render(name) + gap + mark + countStyle.Render(count))
 	}
 	return b.String()
 }

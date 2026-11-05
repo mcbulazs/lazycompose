@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mcbulazs/lazycompose/internal/ui"
 )
@@ -123,6 +124,19 @@ func TestLoadConfigEditor(t *testing.T) {
 		}
 		if *cfg.Editor != want {
 			t.Errorf("%q: editor %q, want %q", data, *cfg.Editor, want)
+		}
+	}
+}
+
+func TestUpdateEvery(t *testing.T) {
+	for in, want := range map[string]time.Duration{"6h": 6 * time.Hour, "30m": 30 * time.Minute, "0": 0, "off": 0, "": 0} {
+		if got, err := updateEvery(in); err != nil || got != want {
+			t.Errorf("updateEvery(%q) = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"soon", "10s", "6"} {
+		if _, err := updateEvery(in); err == nil {
+			t.Errorf("updateEvery(%q) should fail", in)
 		}
 	}
 }

@@ -23,6 +23,9 @@ func (m *Model) startUpdateAll() tea.Cmd {
 	}
 	var queue []discover.Env
 	for _, it := range m.list.items {
+		if it.quick {
+			continue
+		}
 		if running, _, _ := m.counts(it.env); running > 0 {
 			queue = append(queue, it.env)
 		}
@@ -84,7 +87,7 @@ func (m *Model) onUpdate(msg updateMsg) tea.Cmd {
 	m.appendLog(dimStyle.Render("-- press any key to go back to the logs --"))
 	m.setStatus(summary, u.failed > 0)
 	m.updating = nil
-	return m.refreshNow()
+	return tea.Batch(m.refreshNow(), m.recheckUpdates())
 }
 
 // lastLine returns the last non-empty line; docker puts the actual error last.

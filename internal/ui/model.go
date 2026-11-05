@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/mcbulazs/lazycompose/internal/history"
 	"sort"
 	"strings"
 	"time"
@@ -40,7 +41,16 @@ type Options struct {
 	CdFile string
 	// Mouse is set when the program runs with mouse support
 	Mouse bool
+	// UpdateEvery is how often to ask registries for newer images; 0 is never
+	UpdateEvery time.Duration
+	// QuickAccess shows the most used environments at the top of the list
+	QuickAccess bool
+	// History records environment use for quick access; nil records nothing
+	History *history.History
 }
+
+// quickSize is how many environments quick access shows at most.
+const quickSize = 5
 
 type confirm struct {
 	prompt string
@@ -100,6 +110,8 @@ type Model struct {
 	eventsStarting bool
 	eventsTried    time.Time
 
+	upd updateState
+
 	problemsOnly  bool
 	loadingStates bool
 	loadingPS     bool
@@ -147,6 +159,8 @@ func New(opts Options) Model {
 		spin:        sp,
 		help:        h,
 	}
+	m.updateQuick()
+	m.list.cursor = 0 // start on the most used environment
 	if e, ok := m.list.selected(); ok {
 		m.current = e.Dir
 		m.loadingPS = true
@@ -164,9 +178,9 @@ func New(opts Options) Model {
 
 func (m Model) Init() tea.Cmd {
 	if m.scanning {
-		return tea.Batch(m.spin.Tick, rediscover(m.opts.Find), loadStates(), tick(pollEvery), startEvents())
+		return tea.Batch(m.spin.Tick, rediscover(m.opts.Find), loadStates(), tick(pollEvery), startEvents(), m.firstUpdateCheck())
 	}
-	cmds := []tea.Cmd{loadStates(), loadServices(m.opts.Envs), tick(pollEvery), startEvents()}
+	cmds := []tea.Cmd{loadStates(), loadServices(m.opts.Envs), tick(pollEvery), startEvents(), m.firstUpdateCheck()}
 	if c := m.selectCurrent(); c != nil {
 		cmds = append(cmds, c)
 	}
@@ -374,6 +388,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
 
+	case updateTickMsg, updatesCheckedMsg:
+		return m.handleUpdates(msg)
+
 	case tickMsg:
 		every := pollEvery
 		if m.events != nil {
@@ -479,12 +496,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		q := m.list.query
 		prev := m.list
 		m.list = newEnvList(msg.envs, len(m.opts.Roots) > 1)
-		if e, ok := prev.selected(); ok {
-			for i, idx := range m.list.visible {
-				if m.list.items[idx].env.Dir == e.Dir {
-					m.list.cursor = i
-				}
-			}
+		m.updateQuick()
+		if it, ok := prev.selectedItem(); ok {
+			m.list.selectItem(it)
+		} else {
+			m.list.cursor = 0 // first scan: start on the most used environment
 		}
 		m.list.setFilter(q)
 		if m.problemsOnly {
@@ -826,7 +842,44 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleAction(msg)
 }
 
+// handleAction runs an action on the selected environment, and counts it as
+// a use for quick access.
 func (m Model) handleAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	next, cmd := m.envAction(msg)
+	nm := next.(Model)
+	if cmd != nil || nm.confirm != nil && m.confirm == nil {
+		if e, ok := nm.selectedEnv(); ok {
+			nm.recordUse(e)
+		}
+	}
+	return nm, cmd
+}
+
+// updateQuick fills the quick access section from the history. It runs on
+// start and after a rescan only, so the list does not move while in use.
+func (m *Model) updateQuick() {
+	if !m.opts.QuickAccess || m.opts.History == nil {
+		return
+	}
+	dirs := make([]string, len(m.opts.Envs))
+	for i, e := range m.opts.Envs {
+		dirs[i] = e.Dir
+	}
+	m.list.setQuick(m.opts.History.Top(dirs, quickSize, time.Now()))
+}
+
+func (m *Model) recordUse(e discover.Env) {
+	h := m.opts.History
+	if h == nil {
+		return
+	}
+	h.Record(e.Dir, time.Now())
+	if err := h.Save(); err != nil {
+		m.setStatus("saving history: "+err.Error(), true)
+	}
+}
+
+func (m Model) envAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	e, svc, ok := m.target()
 	if !ok {
 		return m, nil
@@ -1092,6 +1145,9 @@ func (m *Model) refreshTable() {
 			if len(cs) > 1 {
 				label = fmt.Sprintf("%s #%d", n, i+1)
 			}
+			if m.upd.avail[m.current][n] {
+				label += " " + updateMark
+			}
 			health := c.Health
 			if health == "" {
 				health = "-"
@@ -1182,7 +1238,7 @@ func (m Model) View() string {
 	if m.scanning && len(m.list.items) == 0 {
 		listBody += dimStyle.Render("scanning…")
 	} else {
-		listBody += m.list.view(lw-4, listH, m.focus == focusEnvs, m.counts)
+		listBody += m.list.view(lw-4, listH, m.focus == focusEnvs, m.counts, m.hasUpdate)
 	}
 	left := pane(envTitle, listBody, lw, body, m.focus == focusEnvs)
 
@@ -1218,8 +1274,14 @@ func (m Model) View() string {
 }
 
 func (m Model) headerView() string {
-	var up, partial, down, problems int
+	var up, partial, down, problems, updates int
 	for _, it := range m.list.items {
+		if it.quick {
+			continue
+		}
+		if m.hasUpdate(it.env.Dir) {
+			updates++
+		}
 		running, total, p := m.counts(it.env)
 		if p > 0 {
 			problems++
@@ -1238,6 +1300,9 @@ func (m Model) headerView() string {
 		dimStyle.Render(fmt.Sprintf("○ %d down", down))
 	if problems > 0 {
 		right += "  " + redStyle.Render(fmt.Sprintf("✗ %d with problems", problems))
+	}
+	if updates > 0 {
+		right += "  " + accentStyle.Render(fmt.Sprintf("↑ %d with updates", updates))
 	}
 	left := accentStyle.Render("lazycompose") + "  " + textStyle.Render(m.opts.Hostname) + "  "
 	room := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 4

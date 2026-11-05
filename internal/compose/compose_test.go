@@ -207,3 +207,26 @@ func TestParseStats(t *testing.T) {
 		}
 	}
 }
+
+func TestParseServiceImages(t *testing.T) {
+	inspect := "sha256:aaa\tnginx:alpine\t/srv/web\tproxy\n" +
+		"sha256:bbb\tmyapp\t/srv/app\tweb\n" +
+		"sha256:aaa\tnginx:alpine\t/srv/other\tproxy\n" +
+		"sha256:ccc\tbusybox\t\t\n" // not from compose
+	images, ids := ParseContainerImages([]byte(inspect))
+	if len(images) != 3 || len(ids) != 2 {
+		t.Fatalf("got %d images and ids %v", len(images), ids)
+	}
+	if images[0].Dir != "/srv/web" || images[0].Service != "proxy" || images[0].Ref != "nginx:alpine" {
+		t.Errorf("first image = %+v", images[0])
+	}
+
+	digests := ParseRepoDigests([]byte("sha256:aaa\t[\"nginx@sha256:111\",\"mirror.local/nginx@sha256:222\"]\n" +
+		"sha256:bbb\t[]\n"))
+	if got := digests["sha256:aaa"]; len(got) != 2 || got[0] != "sha256:111" || got[1] != "sha256:222" {
+		t.Errorf("digests of aaa = %v", got)
+	}
+	if got := digests["sha256:bbb"]; len(got) != 0 {
+		t.Errorf("a locally built image should have no digests, got %v", got)
+	}
+}

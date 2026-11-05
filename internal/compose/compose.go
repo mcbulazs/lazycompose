@@ -331,3 +331,96 @@ func ParseStats(data []byte) (map[string]Stats, error) {
 	}
 	return res, nil
 }
+
+// ServiceImage is the image a service's container was created from.
+type ServiceImage struct {
+	Dir, Service string
+	Ref          string   // the image as written in the compose file
+	ImageID      string   // the local image the container runs
+	Digests      []string // registry digests of that image, like "sha256:..."
+}
+
+// ServiceImages lists the image of every compose-managed container, with
+// the registry digests the image was pulled with. Locally built images have
+// no digests.
+func ServiceImages(ctx context.Context) ([]ServiceImage, error) {
+	ids, err := dockerOutput(ctx, "ps", "-aq", "--filter", "label=com.docker.compose.project")
+	if err != nil {
+		return nil, err
+	}
+	containers := strings.Fields(string(ids))
+	if len(containers) == 0 {
+		return nil, nil
+	}
+	format := `{{.Image}}{{"\t"}}{{.Config.Image}}{{"\t"}}{{index .Config.Labels "` + labelWorkingDir +
+		`"}}{{"\t"}}{{index .Config.Labels "` + labelService + `"}}`
+	out, err := dockerOutput(ctx, append([]string{"inspect", "--format", format}, containers...)...)
+	if err != nil {
+		return nil, err
+	}
+	images, imageIDs := ParseContainerImages(out)
+	if len(imageIDs) == 0 {
+		return images, nil
+	}
+	// an image removed since the container was created makes docker exit
+	// with an error, but it still prints the others
+	digests, _ := dockerOutput(ctx, append([]string{"image", "inspect", "--format", `{{.Id}}{{"\t"}}{{json .RepoDigests}}`}, imageIDs...)...)
+	byID := ParseRepoDigests(digests)
+	for i := range images {
+		images[i].Digests = byID[images[i].ImageID]
+	}
+	return images, nil
+}
+
+// ParseContainerImages parses lines of image id, image ref, working dir and
+// service, and returns the images and the distinct image ids.
+func ParseContainerImages(out []byte) ([]ServiceImage, []string) {
+	var res []ServiceImage
+	var ids []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) != 4 || f[2] == "" || f[3] == "" {
+			continue
+		}
+		res = append(res, ServiceImage{Dir: f[2], Service: f[3], Ref: f[1], ImageID: f[0]})
+		if !seen[f[0]] {
+			seen[f[0]] = true
+			ids = append(ids, f[0])
+		}
+	}
+	return res, ids
+}
+
+// ParseRepoDigests parses lines of image id and its RepoDigests as JSON, and
+// returns the digests without the repository, keyed by image id.
+func ParseRepoDigests(out []byte) map[string][]string {
+	res := map[string][]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		id, js, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+		var repoDigests []string
+		if json.Unmarshal([]byte(js), &repoDigests) != nil {
+			continue
+		}
+		for _, rd := range repoDigests {
+			if _, d, ok := strings.Cut(rd, "@"); ok {
+				res[id] = append(res[id], d)
+			}
+		}
+	}
+	return res
+}
+
+func dockerOutput(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return out, wrap(err, stderr.Bytes())
+	}
+	return out, nil
+}

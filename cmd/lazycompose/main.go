@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mcbulazs/lazycompose/internal/discover"
+	"github.com/mcbulazs/lazycompose/internal/history"
 	"github.com/mcbulazs/lazycompose/internal/ui"
 	"go.yaml.in/yaml/v3"
 )
@@ -21,6 +23,8 @@ type config struct {
 	MaxDepth int                          `yaml:"max_depth"`
 	Editor   *string                      `yaml:"editor"`
 	Mouse    *bool                        `yaml:"mouse"`
+	Quick    *bool                        `yaml:"quick_access"`
+	Updates  *string                      `yaml:"update_check"`
 	Theme    string                       `yaml:"theme"`
 	Themes   map[string]map[string]string `yaml:"themes"`
 	Colors   map[string]string            `yaml:"colors"`
@@ -90,6 +94,17 @@ editor: vim
 # text in most terminals.
 mouse: true
 
+# Show up to 5 environments you use most, by how often and how recently, at
+# the top of the list. Running an action on an environment counts as a use.
+# The history is kept in ~/.local/state/lazycompose/history.json.
+quick_access: true
+
+# How often to ask the image registries whether a newer image exists for a
+# service, like 6h or 30m. Services with an update get a ↑ marker. Only the
+# image digest is fetched, which does not count against Docker Hub's pull
+# limit. Private registries are skipped. Set it to 0 to turn it off.
+update_check: 6h
+
 # Colour theme. Built in: terminal, onedark, tokyonight, catppuccin, gruvbox
 # and nord. "terminal" uses your terminal's own colours; the others use fixed
 # colours. The terminal background is never changed.
@@ -142,8 +157,8 @@ theme: terminal
 `
 
 func loadConfig(path string) (config, error) {
-	editor, mouse := "vim", true
-	cfg := config{Roots: []string{"~"}, Editor: &editor, Mouse: &mouse, Theme: ui.DefaultTheme}
+	editor, mouse, quick, updates := "vim", true, true, "6h"
+	cfg := config{Roots: []string{"~"}, Editor: &editor, Mouse: &mouse, Quick: &quick, Updates: &updates, Theme: ui.DefaultTheme}
 	if path == "" {
 		return cfg, nil
 	}
@@ -177,10 +192,35 @@ func loadConfig(path string) (config, error) {
 	if file.Mouse != nil {
 		cfg.Mouse = file.Mouse
 	}
+	if file.Quick != nil {
+		cfg.Quick = file.Quick
+	}
+	if file.Updates != nil {
+		if _, err := updateEvery(*file.Updates); err != nil {
+			return cfg, fmt.Errorf("%s: update_check: %w", path, err)
+		}
+		cfg.Updates = file.Updates
+	}
 	cfg.Themes = file.Themes
 	cfg.Colors = file.Colors
 	cfg.Keys = file.Keys
 	return cfg, nil
+}
+
+// updateEvery parses update_check: a duration, or 0 / off to turn it off.
+func updateEvery(s string) (time.Duration, error) {
+	switch strings.TrimSpace(s) {
+	case "", "0", "off", "false":
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a duration like 6h or 30m", s)
+	}
+	if d < time.Minute {
+		return 0, fmt.Errorf("%q is too short, use at least 1m", s)
+	}
+	return d, nil
 }
 
 func expandHome(p string) string {
@@ -266,15 +306,19 @@ func main() {
 		}
 	}
 
+	every, _ := updateEvery(*cfg.Updates) // checked when loading the config
 	host, _ := os.Hostname()
 	m := ui.New(ui.Options{
-		Hostname: host,
-		Roots:    cfg.Roots,
-		Find:     find,
-		Theme:    th,
-		Editor:   *cfg.Editor,
-		CdFile:   *cdFile,
-		Mouse:    *cfg.Mouse,
+		Hostname:    host,
+		Roots:       cfg.Roots,
+		Find:        find,
+		Theme:       th,
+		Editor:      *cfg.Editor,
+		CdFile:      *cdFile,
+		Mouse:       *cfg.Mouse,
+		QuickAccess: *cfg.Quick,
+		History:     history.Load(history.DefaultPath()),
+		UpdateEvery: every,
 	})
 
 	opts := []tea.ProgramOption{tea.WithAltScreen()}

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/discover"
+	"github.com/mcbulazs/lazycompose/internal/history"
 )
 
 func env(rel string) discover.Env {
@@ -676,5 +678,69 @@ func TestPaneTitlesShowKeys(t *testing.T) {
 	m = send(m, press("3")...)
 	if m.focus != focusLogs {
 		t.Errorf("3 should focus the logs, focus is %v", m.focus)
+	}
+}
+
+func TestQuickAccess(t *testing.T) {
+	h := history.Load("")
+	now := time.Now()
+	for range 3 {
+		h.Record("/srv/web/shop", now)
+	}
+	h.Record("/srv/plex", now.Add(-time.Hour))
+	h.Record("/srv/gone", now) // no longer on disk
+
+	newModel := func(quick bool) Model {
+		m := New(Options{Hostname: "host", Roots: []string{"/srv"}, Envs: testEnvs(), QuickAccess: quick, History: h})
+		return send(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	}
+
+	m := newModel(true)
+	want := []string{"web/shop", "plex", "plex", "games/mc", "web/blog", "web/shop"}
+	if got := visible(m); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("visible = %v, want %v", got, want)
+	}
+	if selected(m) != "web/shop" {
+		t.Errorf("should start on the most used env, got %q", selected(m))
+	}
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "quick access") {
+		t.Errorf("view should show the quick access section:\n%s", v)
+	}
+	if h := ansi.Strip(m.headerView()); !strings.Contains(h, "○ 4 down") {
+		t.Errorf("header should count each env once: %q", h)
+	}
+
+	// filtering hides the section, so matches are not listed twice
+	f := send(m, press("/", "s", "h", "o")...)
+	if got := visible(f); len(got) != 1 || got[0] != "web/shop" {
+		t.Errorf("filtered = %v", got)
+	}
+
+	// an action counts as a use, moving does not
+	m = send(m, press("j", "j", "j")...)
+	if selected(m) != "games/mc" {
+		t.Fatalf("selected %q, want games/mc", selected(m))
+	}
+	if len(h.Uses["/srv/games/mc"]) != 0 {
+		t.Error("moving should not count as a use")
+	}
+	m = send(m, press("r")...)
+	if len(h.Uses["/srv/games/mc"]) != 1 {
+		t.Error("restart should count as a use")
+	}
+
+	if got := visible(newModel(false)); len(got) != 4 {
+		t.Errorf("quick access off should list each env once, got %v", got)
+	}
+}
+
+func TestQuickAccessAfterScan(t *testing.T) {
+	h := history.Load("")
+	h.Record("/srv/web/shop", time.Now())
+	m := New(Options{Hostname: "host", Roots: []string{"/srv"}, QuickAccess: true, History: h,
+		Find: func() ([]discover.Env, error) { return testEnvs(), nil }})
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 30}, envsMsg{envs: testEnvs()})
+	if it, _ := m.list.selectedItem(); !it.quick || it.env.Rel != "web/shop" {
+		t.Errorf("after the first scan the cursor should be on quick access web/shop, got %+v", it)
 	}
 }

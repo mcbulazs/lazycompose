@@ -118,7 +118,7 @@ func (m *Model) actionDone(id int, a *actionRun, err error) tea.Cmd {
 	if len(m.actions) == 0 && m.updating == nil {
 		m.appendLog(dimStyle.Render("-- press any key to go back to the logs --"))
 	}
-	return m.refreshNow()
+	return tea.Batch(m.refreshNow(), m.recheckUpdates())
 }
 
 // releaseOutput goes back to following logs on a key press, once nothing is

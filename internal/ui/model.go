@@ -2,12 +2,11 @@ package ui
 
 import (
 	"fmt"
-	"github.com/mcbulazs/lazycompose/internal/history"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/table"
@@ -18,6 +17,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/discover"
+	"github.com/mcbulazs/lazycompose/internal/history"
 )
 
 const maxLogLines = 5000
@@ -103,9 +103,9 @@ type Model struct {
 	confirm   *confirm
 	updating  *updateRun
 
-	focus    focus
-	help     help.Model
-	showHelp bool
+	focus  focus
+	menu   *actionMenu // the keys window or the action menu, when open
+	recent []string    // actions run from the menu, newest first
 
 	width, height int
 	scanning      bool
@@ -146,14 +146,6 @@ func New(opts Options) Model {
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colFocus)
 
-	h := help.New()
-	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(colFocus)
-	h.Styles.ShortDesc = dimStyle
-	h.Styles.ShortSeparator = dimStyle
-	h.Styles.FullKey = h.Styles.ShortKey
-	h.Styles.FullDesc = dimStyle
-	h.Styles.FullSeparator = dimStyle
-
 	t := table.New(table.WithColumns(columns(80, nil)))
 
 	m := Model{
@@ -166,7 +158,6 @@ func New(opts Options) Model {
 		table:       t,
 		logs:        viewport.New(0, 0),
 		spin:        sp,
-		help:        h,
 	}
 	m.updateQuick()
 	m.list.cursor = 0 // start on the most used environment
@@ -387,7 +378,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 
 	case tea.MouseMsg:
-		if m.prompt != nil {
+		if m.prompt != nil || m.menu != nil {
 			return m, nil
 		}
 		return m.handleMouse(msg)
@@ -667,6 +658,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.prompt != nil {
 		return m.handlePromptKey(msg)
 	}
+	if m.menu != nil {
+		return m.handleMenuKey(msg)
+	}
 
 	m.releaseOutput(msg)
 
@@ -746,10 +740,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.startMove()
 
 	case key.Matches(msg, keys.Help):
-		m.showHelp = !m.showHelp
-		m.help.ShowAll = m.showHelp
-		m.layout()
-		return m, nil
+		return m, m.openMenu(true)
+
+	case key.Matches(msg, keys.Commands):
+		return m, m.openMenu(false)
 
 	case key.Matches(msg, keys.NextPane, keys.PrevPane, keys.FocusEnvs, keys.FocusServices, keys.FocusLogs):
 		switch {
@@ -956,28 +950,28 @@ func (m Model) envAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, openEditor(m.opts.Editor, e, envFile(e))
 
 	case key.Matches(msg, keys.Start):
-		a := args("up", "-d")
+		a := args(upArgs...)
 		return m, m.runAction(e, "up -d "+name, "docker compose up -d ("+name+")", a...)
 
 	case key.Matches(msg, keys.Restart):
-		a := args("restart")
+		a := args(restartArgs...)
 		return m, m.runAction(e, "restarting "+name, "docker compose restart ("+name+")", a...)
 
 	case key.Matches(msg, keys.Pull):
-		a := args("pull")
+		a := args(pullArgs...)
 		return m, m.runAction(e, "pulling "+name, "docker compose pull ("+name+")", a...)
 
 	case key.Matches(msg, keys.Stop):
 		m.confirm = &confirm{
 			prompt: fmt.Sprintf("Run docker compose down for %s? (y/n)", e.Rel),
 			onYes: func(m *Model) tea.Cmd {
-				return m.runAction(e, "down "+e.Rel, "docker compose down ("+e.Rel+")", "down")
+				return m.runAction(e, "down "+e.Rel, "docker compose down ("+e.Rel+")", downArgs...)
 			},
 		}
 		return m, nil
 
 	case key.Matches(msg, keys.Recreate):
-		a := args("up", "-d", "--force-recreate")
+		a := args(recreateArgs...)
 		target := name
 		m.confirm = &confirm{
 			prompt: fmt.Sprintf("Force recreate %s? (y/n)", target),
@@ -1001,7 +995,7 @@ func (m Model) envAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.serviceRunning(s) {
 			return m, m.runAction(e, "stopping "+name, "docker compose stop ("+name+")", "stop", s)
 		}
-		return m, m.runAction(e, "starting "+name, "docker compose up -d ("+name+")", "up", "-d", s)
+		return m, m.runAction(e, "starting "+name, "docker compose up -d ("+name+")", append(slices.Clone(upArgs), s)...)
 
 	case key.Matches(msg, keys.Folder):
 		return m, openFolder(e)
@@ -1325,7 +1319,7 @@ func (m Model) View() string {
 	right := lipgloss.JoinVertical(lipgloss.Left, services, logs)
 	main := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	return m.withPrompt(lipgloss.JoinVertical(lipgloss.Left, header, main, m.statusView(), footer))
+	return m.withMenu(m.withPrompt(lipgloss.JoinVertical(lipgloss.Left, header, main, m.statusView(), footer)))
 }
 
 func (m Model) headerView() string {
@@ -1390,9 +1384,16 @@ func (m Model) statusView() string {
 	return " " + ansi.Truncate(s, m.width-2, "…")
 }
 
+// footerView points to the keys window and the action menu, which list
+// everything else.
 func (m Model) footerView() string {
-	m.help.Width = m.width - 2
-	return lipgloss.NewStyle().PaddingLeft(1).Render(m.help.View(keys))
+	var parts []string
+	for _, b := range []key.Binding{keys.Help, keys.Commands, keys.Filter, keys.Quit} {
+		if b.Enabled() {
+			parts = append(parts, accentStyle.Render(b.Help().Key)+" "+dimStyle.Render(b.Help().Desc))
+		}
+	}
+	return " " + ansi.Truncate(strings.Join(parts, dimStyle.Render(" • ")), m.width-2, "…")
 }
 
 // paneKey is the "[1] " prefix of a pane title, showing the key that jumps to

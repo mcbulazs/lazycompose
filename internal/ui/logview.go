@@ -127,7 +127,7 @@ func (m *Model) releaseOutput(msg tea.KeyMsg) {
 	if !m.holdOutput || len(m.actions) > 0 || m.updating != nil || m.confirm != nil {
 		return
 	}
-	if key.Matches(msg, keys.NextPane, keys.PrevPane, keys.FocusEnvs, keys.FocusServices, keys.FocusLogs) {
+	if key.Matches(msg, keys.NextPane, keys.PrevPane, keys.FocusEnvs, keys.FocusServices, keys.FocusLogs, keys.Help, keys.Commands) {
 		return
 	}
 	if m.focus == focusLogs {

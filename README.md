@@ -60,7 +60,8 @@ every option. Set `roots` there to make the folder permanent.
 | `x` / `X` | Shell in the container / in the folder |
 | `/` | Filter, or search the logs |
 | `q` / `Q` | Quit / quit to the folder |
-| `?` | All keys |
+| `?` | Search all keys and the commands they run |
+| `:` | Search for an action and run it |
 
 ## Documentation
 

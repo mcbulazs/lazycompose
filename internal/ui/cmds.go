@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -213,7 +214,7 @@ type logStream struct {
 
 func startLogs(id int, e discover.Env, service string) (*logStream, tea.Cmd) {
 	ctx, cancel := context.WithCancel(context.Background())
-	args := []string{"logs", "-f", "--tail", "200"}
+	args := slices.Clone(logArgs)
 	if service != "" {
 		args = append(args, service)
 	}

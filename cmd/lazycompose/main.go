@@ -159,8 +159,8 @@ theme: terminal
 #   restart: r                recreate: R
 #   pull: p                   update_all: U
 #   logs: l                   shell: x                folder_shell: X
-#   refresh: ctrl+r           help: "?"               quit: q
-#   quit_to_folder: Q
+#   refresh: ctrl+r           help: "?"               commands: ":"
+#   quit: q                   quit_to_folder: Q
 #
 # keys:
 #   recreate: F

@@ -20,7 +20,7 @@ type keyMap struct {
 	Start, Stop, Restart, Recreate, Toggle   key.Binding
 	Pull, UpdateAll                          key.Binding
 	Logs, Shell, Folder, Refresh, Help, Quit key.Binding
-	QuitToFolder                             key.Binding
+	QuitToFolder, Commands                   key.Binding
 }
 
 // action is a key binding as it is named in the config file.
@@ -57,7 +57,8 @@ var actions = []action{
 	{"shell", []string{"x"}, "shell", func(k *keyMap) *key.Binding { return &k.Shell }},
 	{"folder_shell", []string{"X"}, "shell in folder", func(k *keyMap) *key.Binding { return &k.Folder }},
 	{"refresh", []string{"ctrl+r"}, "refresh", func(k *keyMap) *key.Binding { return &k.Refresh }},
-	{"help", []string{"?"}, "help", func(k *keyMap) *key.Binding { return &k.Help }},
+	{"commands", []string{":"}, "run", func(k *keyMap) *key.Binding { return &k.Commands }},
+	{"help", []string{"?"}, "keys", func(k *keyMap) *key.Binding { return &k.Help }},
 	{"quit", []string{"q"}, "quit", func(k *keyMap) *key.Binding { return &k.Quit }},
 	{"quit_to_folder", []string{"Q"}, "quit to folder", func(k *keyMap) *key.Binding { return &k.QuitToFolder }},
 }
@@ -171,18 +172,4 @@ func keyLabel(ks []string) string {
 		}
 	}
 	return strings.Join(out, "/")
-}
-
-func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.NextPane, k.Filter, k.Edit, k.Start, k.Stop, k.Restart, k.Pull, k.Logs, k.Shell, k.Help, k.Quit}
-}
-
-func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{k.MoveUp, k.MoveDown, k.NextPane, k.FocusEnvs, k.FocusServices, k.FocusLogs},
-		{k.Filter, k.Problems, k.Edit, k.EditEnv, k.NewEnv, k.MoveEnv, k.Pin, k.Refresh},
-		{k.Start, k.Stop, k.Restart, k.Recreate, k.Toggle},
-		{k.Pull, k.UpdateAll, k.Logs, k.Shell, k.Folder},
-		{k.Help, k.Quit, k.QuitToFolder},
-	}
 }

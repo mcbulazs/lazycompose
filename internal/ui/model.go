@@ -48,6 +48,9 @@ type Options struct {
 	NewTemplate string
 	// NewDotenv creates an empty env file in new environments
 	NewDotenv bool
+	// NewComposeFilename is the compose file name of new environments; ""
+	// means stackfs.ComposeName
+	NewComposeFilename string
 	// UpdateEvery is how often to ask registries for newer images; 0 is never
 	UpdateEvery time.Duration
 	// QuickAccess shows the most used environments at the top of the list

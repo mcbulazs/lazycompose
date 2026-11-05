@@ -59,7 +59,11 @@ func (m *Model) createEnv(path string) (tea.Cmd, error) {
 			return nil, fmt.Errorf("new_env_template: %w", err)
 		}
 	}
-	file, err := stackfs.Create(t, compose, m.opts.NewDotenv)
+	name := m.opts.NewComposeFilename
+	if name == "" {
+		name = stackfs.ComposeName
+	}
+	file, err := stackfs.Create(t, name, compose, m.opts.NewDotenv)
 	if err != nil {
 		return nil, err
 	}

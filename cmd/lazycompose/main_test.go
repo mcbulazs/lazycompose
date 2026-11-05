@@ -140,3 +140,25 @@ func TestUpdateEvery(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadConfigComposeFilename(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	for data, want := range map[string]string{
+		"roots: [/srv]\n":                      "docker-compose.yml",
+		"new_compose_filename: compose.yaml\n": "compose.yaml",
+	} {
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := loadConfig(path)
+		if err != nil || cfg.Filename != want {
+			t.Errorf("%q: filename %q, %v, want %q", data, cfg.Filename, err, want)
+		}
+	}
+	if err := os.WriteFile(path, []byte("new_compose_filename: stack.yml\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadConfig(path); err == nil || !strings.Contains(err.Error(), "compose.yaml") {
+		t.Errorf("a name the scan does not find should be an error listing the names, got %v", err)
+	}
+}

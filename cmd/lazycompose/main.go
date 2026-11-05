@@ -8,12 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 	"github.com/mcbulazs/lazycompose/internal/history"
+	"github.com/mcbulazs/lazycompose/internal/stackfs"
 	"github.com/mcbulazs/lazycompose/internal/ui"
 	"go.yaml.in/yaml/v3"
 )
@@ -27,6 +29,7 @@ type config struct {
 	Updates  *string                      `yaml:"update_check"`
 	Template string                       `yaml:"new_env_template"`
 	Dotenv   bool                         `yaml:"new_env_create_dotenv"`
+	Filename string                       `yaml:"new_compose_filename"`
 	Theme    string                       `yaml:"theme"`
 	Themes   map[string]map[string]string `yaml:"themes"`
 	Colors   map[string]string            `yaml:"colors"`
@@ -108,8 +111,12 @@ quick_access: true
 # limit. Private registries are skipped. Set it to 0 to turn it off.
 update_check: 6h
 
-# New environments (the n key) get a docker-compose.yml from this file. Left
-# out, they get a starter with one service. "~" works here too.
+# The compose file name of new environments (the n key): compose.yaml,
+# compose.yml, docker-compose.yaml or docker-compose.yml.
+new_compose_filename: docker-compose.yml
+
+# New environments get their compose file from this file. Left out, they get
+# a starter with one service. "~" works here too.
 # new_env_template: ~/stacks/template.yml
 
 # Also create an empty .env file in new environments.
@@ -169,7 +176,7 @@ theme: terminal
 
 func loadConfig(path string) (config, error) {
 	editor, mouse, quick, updates := "vim", true, true, "6h"
-	cfg := config{Roots: []string{"~"}, Editor: &editor, Mouse: &mouse, Quick: &quick, Updates: &updates, Theme: ui.DefaultTheme}
+	cfg := config{Roots: []string{"~"}, Editor: &editor, Mouse: &mouse, Quick: &quick, Updates: &updates, Filename: stackfs.ComposeName, Theme: ui.DefaultTheme}
 	if path == "" {
 		return cfg, nil
 	}
@@ -210,6 +217,14 @@ func loadConfig(path string) (config, error) {
 		cfg.Template = expandHome(file.Template)
 	}
 	cfg.Dotenv = file.Dotenv
+	if file.Filename != "" {
+		// another name would not be found by the scan
+		if !slices.Contains(discover.ComposeFiles, file.Filename) {
+			return cfg, fmt.Errorf("%s: new_compose_filename: %q is not one of %s",
+				path, file.Filename, strings.Join(discover.ComposeFiles, ", "))
+		}
+		cfg.Filename = file.Filename
+	}
 	if file.Updates != nil {
 		if _, err := updateEvery(*file.Updates); err != nil {
 			return cfg, fmt.Errorf("%s: update_check: %w", path, err)
@@ -337,6 +352,8 @@ func main() {
 		MaxDepth:    cfg.MaxDepth,
 		NewTemplate: cfg.Template,
 		NewDotenv:   cfg.Dotenv,
+
+		NewComposeFilename: cfg.Filename,
 	})
 
 	opts := []tea.ProgramOption{tea.WithAltScreen()}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -17,7 +18,7 @@ import (
 	"github.com/mcbulazs/lazycompose/internal/discover"
 )
 
-// ComposeName is the file name used for new environments.
+// ComposeName is the default file name for new environments.
 const ComposeName = "docker-compose.yml"
 
 // Starter is the compose file of a new environment when no template is set.
@@ -157,9 +158,14 @@ func realExisting(path string) (string, error) {
 	}
 }
 
-// Create makes the folder of t with a compose file holding compose, and an
-// empty .env if dotenv is set. It returns the compose file path.
-func Create(t Target, compose []byte, dotenv bool) (string, error) {
+// Create makes the folder of t with a compose file called name holding
+// compose, and an empty .env if dotenv is set. It returns the compose file
+// path. name must be one of discover.ComposeFiles, or the scan would not
+// find the environment.
+func Create(t Target, name string, compose []byte, dotenv bool) (string, error) {
+	if !slices.Contains(discover.ComposeFiles, name) {
+		return "", fmt.Errorf("%q is not a compose file name the scan finds", name)
+	}
 	if err := os.MkdirAll(filepath.Dir(t.Dir), 0o755); err != nil {
 		return "", err
 	}
@@ -167,7 +173,7 @@ func Create(t Target, compose []byte, dotenv bool) (string, error) {
 	if err := os.Mkdir(t.Dir, 0o755); err != nil {
 		return "", err
 	}
-	file := filepath.Join(t.Dir, ComposeName)
+	file := filepath.Join(t.Dir, name)
 	if err := writeNew(file, compose, 0o644); err != nil {
 		return "", err
 	}

@@ -92,6 +92,7 @@ func TestCreateEnvTemplateAndEsc(t *testing.T) {
 	}
 	m.opts.NewTemplate = tpl
 	m.opts.NewDotenv = true
+	m.opts.NewComposeFilename = "compose.yaml"
 
 	m = send(m, press("n")...)
 	m = send(m, press("esc")...)
@@ -101,9 +102,9 @@ func TestCreateEnvTemplateAndEsc(t *testing.T) {
 
 	m = send(m, press("n")...)
 	m = typeInPrompt(t, m, root+"/apps/x")
-	b, err := os.ReadFile(filepath.Join(root, "apps/x/docker-compose.yml"))
+	b, err := os.ReadFile(filepath.Join(root, "apps/x/compose.yaml"))
 	if err != nil || !strings.Contains(string(b), "busybox") {
-		t.Errorf("compose file should come from the template: %q %v", b, err)
+		t.Errorf("compose.yaml should be created from the template: %q %v", b, err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "apps/x", ".env")); err != nil {
 		t.Errorf("env file should be created: %v", err)

@@ -83,11 +83,11 @@ func TestCreate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := Create(target, []byte(Starter), true)
+	file, err := Create(target, "compose.yaml", []byte(Starter), true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(file); string(b) != Starter || filepath.Base(file) != ComposeName {
+	if b, _ := os.ReadFile(file); string(b) != Starter || filepath.Base(file) != "compose.yaml" {
 		t.Errorf("compose file %s = %q", file, b)
 	}
 	info, err := os.Stat(filepath.Join(target.Dir, ".env"))
@@ -97,8 +97,15 @@ func TestCreate(t *testing.T) {
 	if found, _ := discover.Find([]string{root}, 0); len(found) != 3 {
 		t.Errorf("the scan should find the new environment, found %d", len(found))
 	}
-	if _, err := Create(target, nil, false); err == nil {
+	if _, err := Create(target, ComposeName, nil, false); err == nil {
 		t.Error("creating over an existing folder should fail")
+	}
+	other, _ := Check(root+"/apps/other", []string{root}, 0, envs, "")
+	if _, err := Create(other, "stack.yml", nil, false); err == nil {
+		t.Error("a name the scan does not find should fail")
+	}
+	if _, err := os.Stat(other.Dir); !os.IsNotExist(err) {
+		t.Error("a bad name should fail before creating the folder")
 	}
 }
 

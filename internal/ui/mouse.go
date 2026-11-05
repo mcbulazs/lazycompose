@@ -59,8 +59,8 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		m.setTableStyles()
 		switch pane {
 		case focusEnvs:
-			// border and title come first, then the filter line if shown
-			first := 2
+			// the top border holds the title, then the filter line if shown
+			first := 1
 			if m.list.query != "" {
 				first++
 			}
@@ -70,10 +70,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				return m, m.onSelect()
 			}
 		case focusServices:
-			// border, title and the column header, then the rows; only
+			// the top border and the column header, then the rows; only
 			// when all rows fit, since the table does not expose its scroll
 			rows := len(m.table.Rows())
-			if i := row - 3; i >= 0 && i < rows && rows < m.table.Height() {
+			if i := row - 2; i >= 0 && i < rows && rows < m.table.Height() {
 				m.table.SetCursor(i)
 			}
 		}

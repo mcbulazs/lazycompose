@@ -1177,12 +1177,12 @@ func (m Model) bodyHeight() int {
 
 func (m Model) servicesHeight() int {
 	body := m.bodyHeight()
-	want := len(m.table.Rows()) + 5
+	want := len(m.table.Rows()) + 4
 	return max(min(want, body/2), min(7, body-3))
 }
 
 func (m Model) listHeight() int {
-	h := m.bodyHeight() - 3
+	h := m.bodyHeight() - 2
 	if m.filtering || m.list.query != "" {
 		h--
 	}
@@ -1199,10 +1199,10 @@ func (m *Model) layout() {
 
 	m.table.SetColumns(columns(inner, m.table.Rows()))
 	m.table.SetWidth(inner)
-	m.table.SetHeight(max(sh-3, 2))
+	m.table.SetHeight(max(sh-2, 2))
 
 	m.logs.Width = inner
-	m.logs.Height = max(m.bodyHeight()-sh-3, 1)
+	m.logs.Height = max(m.bodyHeight()-sh-2, 1)
 	if len(m.logLines) > 0 {
 		m.renderLogs()
 	}

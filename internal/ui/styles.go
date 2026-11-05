@@ -180,6 +180,8 @@ func applyTheme(t Theme) {
 	confirmStyle = lipgloss.NewStyle().Foreground(t.Yellow).Bold(true)
 }
 
+// pane draws a bordered box of w by h cells with its title in the top
+// border, like ╭─ [2] Services ──╮.
 func pane(title, body string, w, h int, focused bool) string {
 	border := colBorder
 	t := titleDim
@@ -187,13 +189,21 @@ func pane(title, body string, w, h int, focused bool) string {
 		border = colFocus
 		t = titleStyle
 	}
+	bs := lipgloss.NewStyle().Foreground(border)
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
+		BorderTop(false).
 		BorderForeground(border).
 		Padding(0, 1).
 		Width(max(w-2, 0)).
 		Height(max(h-2, 0)).
-		MaxHeight(max(h, 0))
-	title = ansi.Truncate(title, max(w-4, 1), "…")
-	return style.Render(t.Render(title) + "\n" + body)
+		MaxHeight(max(h-1, 0))
+
+	title = ansi.Truncate(title, max(w-6, 1), "…")
+	fill := max(w-lipgloss.Width(title)-5, 0)
+	top := bs.Render("╭─ ") + t.Render(title) + bs.Render(" "+strings.Repeat("─", fill)+"╮")
+	if w < 7 {
+		top = bs.Render("╭" + strings.Repeat("─", max(w-2, 0)) + "╮")
+	}
+	return top + "\n" + style.Render(body)
 }

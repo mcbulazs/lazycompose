@@ -337,17 +337,20 @@ func click(x, y int) tea.MouseMsg {
 
 func TestMouse(t *testing.T) {
 	m := newTestModel(t)
-	// screen: header on row 0, pane border on 1, title on 2, list from 3:
+	// screen: header on row 0, pane border with the title on 1, list from 2:
 	// plex, games/, mc, web/, blog, shop
 	screen := strings.Split(m.View(), "\n")
-	if !strings.Contains(screen[5], "mc") || !strings.Contains(screen[4], "games/") {
-		t.Fatalf("layout changed, rows 4-5 are %q and %q", screen[4], screen[5])
+	if !strings.Contains(screen[1], "[1] Environments") {
+		t.Fatalf("the title should be in the top border: %q", screen[1])
 	}
-	m = send(m, click(5, 5))
+	if !strings.Contains(screen[4], "mc") || !strings.Contains(screen[3], "games/") {
+		t.Fatalf("layout changed, rows 3-4 are %q and %q", screen[3], screen[4])
+	}
+	m = send(m, click(5, 4))
 	if selected(m) != "games/mc" {
 		t.Errorf("click selected %q, want games/mc", selected(m))
 	}
-	m = send(m, click(5, 4)) // a group header does nothing
+	m = send(m, click(5, 3)) // a group header does nothing
 	if selected(m) != "games/mc" {
 		t.Errorf("clicking a header changed the selection to %q", selected(m))
 	}
@@ -361,12 +364,12 @@ func TestMouse(t *testing.T) {
 		servicesMsg{services: map[string][]string{"/srv/web/blog": {"db", "web"}}},
 		psMsg{dir: "/srv/web/blog"},
 	)
-	// services pane: border 1, title 2, column header 3, rows from 4
+	// services pane: border with title 1, column header 2, rows from 3
 	screen = strings.Split(m.View(), "\n")
-	if !strings.Contains(screen[5], " web ") {
-		t.Fatalf("layout changed, row 5 is %q", screen[5])
+	if !strings.Contains(screen[4], " web ") {
+		t.Fatalf("layout changed, row 4 is %q", screen[4])
 	}
-	m = send(m, click(m.leftWidth()+5, 5))
+	m = send(m, click(m.leftWidth()+5, 4))
 	if m.focus != focusServices || m.selectedService() != "web" {
 		t.Errorf("focus %v, service %q; want services pane and web", m.focus, m.selectedService())
 	}

@@ -114,7 +114,7 @@ func TestParseDockerPS(t *testing.T) {
 		t.Errorf("blog services %v", b.Services)
 	}
 
-	p := m["/srv/stacks/jellyfin"]
+	p := m[filepath.FromSlash("/srv/stacks/jellyfin")]
 	if p == nil || p.Running != 0 || p.Total != 1 {
 		t.Errorf("jellyfin state %+v", p)
 	}

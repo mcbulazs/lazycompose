@@ -35,6 +35,20 @@ func diskModel(t *testing.T) (Model, string) {
 	return send(m, tea.WindowSizeMsg{Width: 120, Height: 30}), root
 }
 
+// promptText is the text inside the prompt box as drawn, with its wrapped
+// lines joined by spaces, so a check does not depend on where lines break.
+func promptText(m Model) string {
+	var parts []string
+	_, _, _, box := m.promptBox()
+	for _, l := range strings.Split(ansi.Strip(box), "\n") {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "│") && strings.HasSuffix(l, "│") {
+			parts = append(parts, strings.TrimSpace(strings.Trim(l, "│")))
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 func typeInPrompt(t *testing.T, m Model, value string) Model {
 	t.Helper()
 	if m.prompt == nil {
@@ -62,14 +76,14 @@ func TestCreateEnv(t *testing.T) {
 	if m.prompt == nil || !strings.Contains(m.prompt.err, "already exists") {
 		t.Fatalf("existing folder should be refused inline, prompt %+v", m.prompt)
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "already exists") {
-		t.Error("the error should be shown in the prompt")
+	if !strings.Contains(ansi.Strip(m.View()), "New environment") || !strings.Contains(promptText(m), "already exists") {
+		t.Errorf("the error should be shown in the prompt:\n%s", ansi.Strip(m.View()))
 	}
 	// a path too long for the box wraps, so the reason still shows
 	long := root + "/" + strings.Repeat("deep/", 30) + "plex"
 	m.prompt.err = long + " already exists"
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "already exists") || !strings.Contains(v, "deep/") {
-		t.Errorf("a long error should wrap, not be cut:\n%s", v)
+	if v := promptText(m); !strings.Contains(v, "already exists") || !strings.Contains(v, "deep/plex") {
+		t.Errorf("a long error should wrap, not be cut:\n%s", ansi.Strip(m.View()))
 	}
 
 	m = typeInPrompt(t, m, root+"/web/shop")

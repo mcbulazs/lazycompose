@@ -101,7 +101,8 @@ func TestParseDockerPS(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	b := m["/srv/stacks/web/blog"]
+	// the working_dir labels are cleaned, so on Windows they have \
+	b := m[filepath.FromSlash("/srv/stacks/web/blog")]
 	if b == nil {
 		t.Fatalf("blog missing: %v", m)
 	}
@@ -158,7 +159,7 @@ func TestParseDockerPSProblems(t *testing.T) {
 		"/srv/stacks/jellyfin": 0,
 	}
 	for dir, n := range want {
-		st := m[dir]
+		st := m[filepath.FromSlash(dir)]
 		if st == nil {
 			t.Errorf("%s missing", dir)
 			continue

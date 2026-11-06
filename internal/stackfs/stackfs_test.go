@@ -3,6 +3,7 @@ package stackfs
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -91,7 +92,7 @@ func TestCreate(t *testing.T) {
 		t.Errorf("compose file %s = %q", file, b)
 	}
 	info, err := os.Stat(filepath.Join(target.Dir, ".env"))
-	if err != nil || info.Mode().Perm() != 0o600 {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o600) {
 		t.Errorf("the env file should be created with mode 600: %v %v", info, err)
 	}
 	if found, _ := discover.Find([]string{root}, 0); len(found) != 3 {
@@ -149,10 +150,11 @@ func TestCopyTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(filepath.Join(to, "sub", "a"))
-	if info == nil || info.Mode().Perm() != 0o640 {
+	// Windows has no Unix file modes to keep
+	if info == nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o640) {
 		t.Errorf("file mode not kept: %v", info)
 	}
-	if l, _ := os.Readlink(filepath.Join(to, "link")); l != "sub/a" {
+	if l, _ := os.Readlink(filepath.Join(to, "link")); l != filepath.FromSlash("sub/a") {
 		t.Errorf("symlink = %q", l)
 	}
 }

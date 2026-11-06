@@ -110,7 +110,7 @@ themes:
 func TestLoadConfigEditor(t *testing.T) {
 	dir := t.TempDir()
 	tests := map[string]string{
-		"roots: [/srv]\n": "vim",
+		"roots: [/srv]\n": defaultEditor(), // vim, or "" on Windows
 		"editor: nano\n":  "nano",
 		"editor: \"\"\n":  "",
 	}

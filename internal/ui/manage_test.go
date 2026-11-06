@@ -50,7 +50,7 @@ func TestCreateEnv(t *testing.T) {
 		t.Fatalf("selected %q", selected(m))
 	}
 	m = send(m, press("n")...)
-	if m.prompt == nil || m.prompt.input.Value() != root+"/" {
+	if m.prompt == nil || m.prompt.input.Value() != root+string(filepath.Separator) {
 		t.Fatalf("prompt should start at the parent of the selection, got %+v", m.prompt)
 	}
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "New environment") {
@@ -64,6 +64,12 @@ func TestCreateEnv(t *testing.T) {
 	}
 	if !strings.Contains(ansi.Strip(m.View()), "already exists") {
 		t.Error("the error should be shown in the prompt")
+	}
+	// a path too long for the box wraps, so the reason still shows
+	long := root + "/" + strings.Repeat("deep/", 30) + "plex"
+	m.prompt.err = long + " already exists"
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "already exists") || !strings.Contains(v, "deep/") {
+		t.Errorf("a long error should wrap, not be cut:\n%s", v)
 	}
 
 	m = typeInPrompt(t, m, root+"/web/shop")

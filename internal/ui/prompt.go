@@ -61,7 +61,11 @@ func (p *pathPrompt) view(w int) string {
 	p.input.Width = inner - 1
 	lines := []string{p.input.View()}
 	if p.err != "" {
-		lines = append(lines, redStyle.Render(ansi.Truncate(p.err, inner, "…")))
+		// wrapped, not cut: a long path would hide the reason at the end;
+		// paths break at their separators
+		for _, l := range strings.Split(ansi.Wrap(p.err, inner, `/\`), "\n") {
+			lines = append(lines, redStyle.Render(l))
+		}
 	} else {
 		lines = append(lines, dimStyle.Render(ansi.Truncate(p.hint, inner, "…")))
 	}

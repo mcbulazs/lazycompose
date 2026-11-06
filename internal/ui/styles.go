@@ -39,10 +39,10 @@ var Themes = map[string]Theme{
 
 func hexTheme(border, focus, text, dim, green, yellow, red, selBg string) Theme {
 	return Theme{
-		Border: lipgloss.Color(border), Focus: lipgloss.Color(focus),
-		Text: lipgloss.Color(text), Dim: lipgloss.Color(dim),
-		Green: lipgloss.Color(green), Yellow: lipgloss.Color(yellow), Red: lipgloss.Color(red),
-		SelectBg: lipgloss.Color(selBg), SelectFg: lipgloss.Color(text),
+		Border: themeColor("border", border), Focus: themeColor("focus", focus),
+		Text: themeColor("text", text), Dim: themeColor("dim", dim),
+		Green: themeColor("green", green), Yellow: themeColor("yellow", yellow), Red: themeColor("red", red),
+		SelectBg: themeColor("select_bg", selBg), SelectFg: themeColor("select_fg", text),
 	}
 }
 
@@ -126,7 +126,10 @@ func (t *Theme) set(key, value string) error {
 	if n, err := strconv.Atoi(value); !hexColor.MatchString(value) && (err != nil || n < 0 || n > 255) {
 		return fmt.Errorf("%q is not a hex colour or 0-255", value)
 	}
-	c := lipgloss.Color(value)
+	var c lipgloss.TerminalColor = lipgloss.Color(value)
+	if hexColor.MatchString(value) {
+		c = themeColor(key, value)
+	}
 	switch key {
 	case "border":
 		t.Border = c

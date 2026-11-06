@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestLoadTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if th.Focus != lipgloss.Color("#ff0000") || th.Red != lipgloss.Color("9") {
+	if th.Focus != themeColor("focus", "#ff0000") || th.Red != lipgloss.Color("9") {
 		t.Errorf("overrides not applied: %+v", th)
 	}
 	if th.Green != Themes["nord"].Green {
@@ -56,13 +57,13 @@ func TestLoadCustomTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if th.Focus != lipgloss.Color("#ff9e64") {
+	if th.Focus != themeColor("focus", "#ff9e64") {
 		t.Errorf("focus not set from theme: %v", th.Focus)
 	}
 	if th.Green != Themes["onedark"].Green || th.Border != Themes["onedark"].Border {
 		t.Errorf("other colours should come from the base theme")
 	}
-	if th.Red != lipgloss.Color("#ff0000") {
+	if th.Red != themeColor("red", "#ff0000") {
 		t.Errorf("colors overrides should apply on top of the theme: %v", th.Red)
 	}
 
@@ -80,7 +81,7 @@ func TestLoadCustomTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if th.Focus != lipgloss.Color("#ffffff") || th.Green != Themes["nord"].Green {
+	if th.Focus != themeColor("focus", "#ffffff") || th.Green != Themes["nord"].Green {
 		t.Errorf("unexpected nord override: %+v", th)
 	}
 }
@@ -103,4 +104,69 @@ func TestLoadCustomThemeErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "mine") {
 		t.Errorf("unknown theme error should list custom themes, got %v", err)
 	}
+}
+
+// every built-in theme keeps its colours apart from the background when the
+// terminal has only 256 or 16 colours
+func TestThemeFallbacks(t *testing.T) {
+	for name, th := range Themes {
+		for key, c := range map[string]lipgloss.TerminalColor{
+			"border": th.Border, "focus": th.Focus, "text": th.Text, "dim": th.Dim,
+			"green": th.Green, "yellow": th.Yellow, "red": th.Red, "select_fg": th.SelectFg,
+		} {
+			cc, ok := c.(lipgloss.CompleteColor)
+			if !ok {
+				continue // the terminal theme uses the terminal's own colours
+			}
+			n, _ := strconv.Atoi(cc.ANSI256)
+			r, g, b := xterm256(n)
+			if _, _, l := hsl(r, g, b); l < 0.2 {
+				t.Errorf("%s %s: %s becomes %d (%d,%d,%d) with 256 colours, too dark", name, key, cc.TrueColor, n, r, g, b)
+			}
+			if cc.ANSI == "0" {
+				t.Errorf("%s %s: black with 16 colours", name, key)
+			}
+		}
+	}
+}
+
+func TestNearest256(t *testing.T) {
+	for hex, want := range map[string]int{
+		"#e06c75": 168, // onedark red, was 232 (almost black) through lipgloss
+		"#000000": 16,
+		"#ffffff": 231,
+		"#ff0000": 196,
+		"#808080": 244,
+	} {
+		r, g, b, _ := parseHex(hex)
+		if got := nearest256(r, g, b); got != want {
+			t.Errorf("nearest256(%s) = %d, want %d", hex, got, want)
+		}
+	}
+}
+
+func TestRoleFallbacks(t *testing.T) {
+	for key, want := range map[string]string{"red": "1", "green": "2", "yellow": "3", "text": "7", "dim": "8"} {
+		// nord's text is a light blue-grey; it must stay plain text
+		c := themeColor(key, "#d8dee9").(lipgloss.CompleteColor)
+		if c.ANSI != want {
+			t.Errorf("%s: 16 colour fallback %s, want %s", key, c.ANSI, want)
+		}
+	}
+	if c := themeColor("focus", "#61afef").(lipgloss.CompleteColor); c.ANSI != "4" {
+		t.Errorf("a blue focus should fall back to blue, got %s", c.ANSI)
+	}
+	if c := themeColor("red", "9"); c != lipgloss.Color("9") {
+		t.Errorf("a 0-255 colour is kept as it is, got %v", c)
+	}
+}
+
+// xterm256 is the RGB of a colour of the cube or the grey ramp.
+func xterm256(n int) (r, g, b int) {
+	if n >= 232 {
+		v := 8 + 10*(n-232)
+		return v, v, v
+	}
+	n -= 16
+	return cubeLevels[n/36], cubeLevels[n/6%6], cubeLevels[n%6]
 }

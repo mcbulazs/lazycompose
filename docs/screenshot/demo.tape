@@ -57,7 +57,7 @@ Type ":wq"
 Sleep 0.6s
 Enter
 Sleep 1.8s
-Type "y"
+Type "u"
 Sleep 3.5s
 
 # the services pane, then the compose file of a service, zoomed

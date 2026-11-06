@@ -79,6 +79,9 @@ const quickSize = 5
 type confirm struct {
 	prompt string
 	onYes  func(m *Model) tea.Cmd
+	// yes is another key that answers yes, like the up key for applying
+	// with up -d; nil for none
+	yes *key.Binding
 }
 
 type Model struct {
@@ -609,11 +612,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setStatus("config ok", false)
+		yes := "y"
+		if keys.Start.Enabled() {
+			// the up key applies too, it is what the question offers to run
+			yes += " or " + keys.Start.Help().Key
+		}
 		m.confirm = &confirm{
-			prompt: "Apply changes? (y = up -d / n)",
+			prompt: "Apply changes? (" + yes + " = up -d / n)",
 			onYes: func(m *Model) tea.Cmd {
 				return m.runAction(e, "up -d "+e.Rel, "docker compose up -d ("+e.Rel+")", "up", "-d")
 			},
+			yes: &keys.Start,
 		}
 		return m, loadServices([]discover.Env{e})
 
@@ -729,6 +738,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "n", "N", "esc", "q":
 			m.confirm = nil
 			m.setStatus("cancelled", false)
+		default:
+			if y := m.confirm.yes; y != nil && y.Enabled() && key.Matches(msg, *y) {
+				c := m.confirm.onYes
+				m.confirm = nil
+				return m, c(&m)
+			}
 		}
 		return m, nil
 	}

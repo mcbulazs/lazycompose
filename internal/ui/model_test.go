@@ -404,8 +404,45 @@ func TestEditorResult(t *testing.T) {
 
 	// a valid config asks before applying
 	m = send(m, validateMsg{env: env("plex")})
-	if m.confirm == nil || m.confirm.prompt != "Apply changes? (y = up -d / n)" {
+	if m.confirm == nil || m.confirm.prompt != "Apply changes? (y or u = up -d / n)" {
 		t.Errorf("expected apply prompt, got %+v", m.confirm)
+	}
+}
+
+// u, the up key, also answers yes to applying an edit, since that runs up
+func TestApplyWithUpKey(t *testing.T) {
+	resetKeys(t)
+	m := newTestModel(t)
+	m = send(m, validateMsg{env: env("plex")})
+	m = send(m, press("u")...)
+	if m.confirm != nil || m.status == "cancelled" || len(m.actions) == 0 {
+		t.Errorf("u should apply: confirm %+v, status %q, actions %d", m.confirm, m.status, len(m.actions))
+	}
+
+	// a remapped up key moves with it, and u no longer answers
+	if err := SetKeys(map[string][]string{"up": {"a"}}); err != nil {
+		t.Fatal(err)
+	}
+	m = newTestModel(t)
+	m = send(m, validateMsg{env: env("plex")})
+	if !strings.Contains(m.confirm.prompt, "y or a = up -d") {
+		t.Errorf("prompt %q should offer a", m.confirm.prompt)
+	}
+	if m = send(m, press("u")...); m.confirm == nil {
+		t.Error("u should do nothing once up is on another key")
+	}
+	if m = send(m, press("a")...); m.confirm != nil {
+		t.Error("a should apply")
+	}
+
+	// with up turned off only y applies
+	if err := SetKeys(map[string][]string{"up": {}}); err != nil {
+		t.Fatal(err)
+	}
+	m = newTestModel(t)
+	m = send(m, validateMsg{env: env("plex")})
+	if m.confirm.prompt != "Apply changes? (y = up -d / n)" {
+		t.Errorf("prompt %q", m.confirm.prompt)
 	}
 }
 

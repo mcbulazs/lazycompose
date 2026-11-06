@@ -13,7 +13,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/mcbulazs/lazycompose/internal/discover"
 )
@@ -55,7 +54,7 @@ func Check(path string, roots []string, maxDepth int, envs []discover.Env, self 
 		}
 	}
 	if !filepath.IsAbs(path) {
-		return Target{}, errors.New("use a full path, starting with / or ~/")
+		return Target{}, errors.New("use a full path, or one starting with ~/")
 	}
 	dir := filepath.Clean(path)
 
@@ -205,7 +204,7 @@ func Move(from string, t Target) error {
 		return err
 	}
 	err := os.Rename(from, t.Dir)
-	if err == nil || !errors.Is(err, syscall.EXDEV) {
+	if err == nil || !crossDevice(err) {
 		return err
 	}
 	// create the target first, so only a folder made here is ever removed
@@ -251,13 +250,12 @@ func copyTree(from, to string) error {
 }
 
 func copyFile(from, to string, perm os.FileMode) error {
-	// O_NOFOLLOW: a file swapped for a symlink while copying is not followed
-	src, err := os.OpenFile(from, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	src, err := os.OpenFile(from, os.O_RDONLY|noFollow, 0)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = src.Close() }()
-	dst, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, perm)
+	dst, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL|noFollow, perm)
 	if err != nil {
 		return err
 	}

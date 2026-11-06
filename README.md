@@ -20,8 +20,10 @@ stop, restart, pull, edit and tail logs without leaving the terminal.
 
 ## Install
 
-lazycompose needs Docker with the compose plugin (`docker compose`). On
-Linux (x86_64 or ARM64):
+lazycompose needs Docker with the compose plugin (`docker compose`). It runs
+on Linux, macOS and Windows, on x86_64 and ARM64.
+
+On Linux and macOS:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mcbulazs/lazycompose/main/install.sh | sh
@@ -38,9 +40,13 @@ is somewhere you can write). It downloads the latest release, checks it
 against `checksums.txt` and replaces the binary. lazycompose also mentions a
 new release in its header, once a day.
 
-By hand: download `lazycompose_linux_amd64.tar.gz` (or `arm64`) from the
+On Windows, download `lazycompose_windows_amd64.zip` (or `arm64`) from the
 [latest release](https://github.com/mcbulazs/lazycompose/releases/latest),
-unpack it and put `lazycompose` in your `PATH`.
+unpack it and put `lazycompose.exe` in a folder in your `PATH`.
+`lazycompose -update` works there too.
+
+By hand on Linux or macOS: download `lazycompose_<os>_<arch>.tar.gz` from the
+latest release, unpack it and put `lazycompose` in your `PATH`.
 
 Or with Go 1.27 or newer:
 
@@ -56,9 +62,9 @@ Point it at the folder that holds your stacks:
 lazycompose -root /srv/stacks
 ```
 
-The first run creates `~/.config/lazycompose/config.yaml`, with a comment for
-every option. Set `roots` there to make the folder permanent; `c` opens it
-from inside lazycompose.
+The first run creates `~/.config/lazycompose/config.yaml` (`%AppData%` on
+Windows), with a comment for every option. Set `roots` there to make the
+folder permanent; `c` opens it from inside lazycompose.
 
 ## Keys
 

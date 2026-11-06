@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -160,6 +161,44 @@ func TestLoadConfigComposeFilename(t *testing.T) {
 	}
 	if _, err := loadConfig(path); err == nil || !strings.Contains(err.Error(), "compose.yaml") {
 		t.Errorf("a name the scan does not find should be an error listing the names, got %v", err)
+	}
+}
+
+func TestConfigDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the home folder comes from USERPROFILE on Windows")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	// macOS too, not ~/Library/Application Support
+	for _, goos := range []string{"linux", "darwin"} {
+		if got, _ := configDir(goos); got != filepath.Join(home, ".config") {
+			t.Errorf("configDir(%s) = %q, want ~/.config", goos, got)
+		}
+	}
+	cfg := filepath.Join(home, "cfg")
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	if got, _ := configDir("darwin"); got != cfg {
+		t.Errorf("configDir with XDG_CONFIG_HOME = %q, want %q", got, cfg)
+	}
+}
+
+func TestFirstConfig(t *testing.T) {
+	if got := firstConfig("vim"); got != defaultConfig {
+		t.Error("with vim the first config is the default one")
+	}
+	got := firstConfig("")
+	if !strings.Contains(got, "\neditor: \"\"\n") || strings.Contains(got, "\neditor: vim\n") {
+		t.Error("the first config should have an empty editor on Windows")
+	}
+	// the written file loads back with the same editor
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err := loadConfig(path); err != nil || *cfg.Editor != "" {
+		t.Errorf("loaded editor %q, %v", *cfg.Editor, err)
 	}
 }
 

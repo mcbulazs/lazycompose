@@ -4,6 +4,7 @@ package selfupdate
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"compress/gzip"
@@ -16,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -148,23 +150,48 @@ func (c *Client) Latest(ctx context.Context) (string, error) {
 	return tag, nil
 }
 
+// managedIn are the places package managers install into, after
+// symlinks are resolved: the nix store, Homebrew's Cellar (macOS and
+// Linux), Scoop and winget.
+var managedIn = []string{"/nix/store/", "/Cellar/", "/scoop/apps/", "/WinGet/Packages/"}
+
 // Managed reports whether the binary at exe belongs to a package manager
-// (in /usr/bin, /bin or the nix store). Replacing it would go behind the
-// package manager's back, so those are updated with it instead.
+// (in /usr/bin, /bin, the nix store, Homebrew, Scoop or winget). Replacing
+// it would go behind the package manager's back, so those are updated with
+// it instead.
 func Managed(exe string) bool {
-	switch filepath.Dir(exe) {
+	p := strings.ReplaceAll(exe, `\`, "/")
+	switch path.Dir(p) {
 	case "/usr/bin", "/bin", "/usr/sbin", "/sbin":
 		return true
 	}
-	return strings.HasPrefix(exe, "/nix/store/")
+	for _, m := range managedIn {
+		if strings.Contains(strings.ToLower(p), strings.ToLower(m)) {
+			return true
+		}
+	}
+	return false
 }
 
-// AssetName is the release archive for this system.
+// AssetName is the release archive for this system: a .tar.gz, or a .zip
+// on Windows.
 func (c *Client) AssetName() (string, error) {
-	if c.GOOS != "linux" || (c.GOARCH != "amd64" && c.GOARCH != "arm64") {
-		return "", fmt.Errorf("there are release binaries for linux amd64 and arm64 only, not %s %s", c.GOOS, c.GOARCH)
+	if osNames[c.GOOS] == "" || (c.GOARCH != "amd64" && c.GOARCH != "arm64") {
+		return "", fmt.Errorf("there are release binaries for Linux, macOS and Windows on amd64 and arm64 only, not %s %s", c.GOOS, c.GOARCH)
 	}
-	return fmt.Sprintf("lazycompose_%s_%s.tar.gz", c.GOOS, c.GOARCH), nil
+	ext := "tar.gz"
+	if c.GOOS == "windows" {
+		ext = "zip"
+	}
+	return fmt.Sprintf("lazycompose_%s_%s.%s", c.GOOS, c.GOARCH, ext), nil
+}
+
+// binName is the name of the binary in the archive.
+func (c *Client) binName() string {
+	if c.GOOS == "windows" {
+		return "lazycompose.exe"
+	}
+	return "lazycompose"
 }
 
 // Update replaces the binary at exe with the latest release if it is newer
@@ -206,12 +233,12 @@ func (c *Client) Update(ctx context.Context, current, exe string) (string, error
 	if got := sha256.Sum256(archive); hex.EncodeToString(got[:]) != want {
 		return "", fmt.Errorf("%s does not match its checksum, not installing it", asset)
 	}
-	bin, err := extract(archive, "lazycompose")
+	bin, err := extract(archive, c.binName())
 	if err != nil {
 		return "", err
 	}
-	if !bytes.HasPrefix(bin, []byte("\x7fELF")) {
-		return "", errors.New("the downloaded file is not a Linux program, not installing it")
+	if err := checkBinary(bin, c.GOOS, c.GOARCH); err != nil {
+		return "", err
 	}
 	if err := replace(exe, bin); err != nil {
 		return "", err
@@ -260,8 +287,11 @@ func checksumFor(sums []byte, name string) (string, error) {
 	return "", fmt.Errorf("no checksum for %s in the release", name)
 }
 
-// extract returns the regular file called name from a .tar.gz.
+// extract returns the regular file called name from a .tar.gz or a .zip.
 func extract(archive []byte, name string) ([]byte, error) {
+	if bytes.HasPrefix(archive, []byte("PK\x03\x04")) {
+		return extractZip(archive, name)
+	}
 	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
 		return nil, err
@@ -285,12 +315,45 @@ func extract(archive []byte, name string) ([]byte, error) {
 	}
 }
 
-// replace writes bin next to exe and renames it over exe.
+// extractZip returns the regular file called name from a .zip.
+func extractZip(archive []byte, name string) ([]byte, error) {
+	zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range zr.File {
+		if f.Name != name || !f.Mode().IsRegular() {
+			continue
+		}
+		if f.UncompressedSize64 > maxBinary {
+			return nil, errors.New("the binary in the archive is larger than expected")
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rc.Close() }()
+		b, err := io.ReadAll(io.LimitReader(rc, maxBinary+1))
+		if err != nil {
+			return nil, err
+		}
+		if len(b) > maxBinary {
+			return nil, errors.New("the binary in the archive is larger than expected")
+		}
+		return b, nil
+	}
+	return nil, fmt.Errorf("%s is not in the release archive", name)
+}
+
+// replace writes bin next to exe and swaps it in.
 func replace(exe string, bin []byte) error {
 	dir := filepath.Dir(exe)
 	tmp, err := os.CreateTemp(dir, ".lazycompose-update-*")
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
+			if runtime.GOOS == "windows" {
+				return fmt.Errorf("no permission to write to %s; run it from a terminal opened as administrator", dir)
+			}
 			return fmt.Errorf("no permission to write to %s; run it with sudo: sudo %s -update", dir, exe)
 		}
 		return err
@@ -312,7 +375,7 @@ func replace(exe string, bin []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp.Name(), exe); err != nil {
+	if err := swap(tmp.Name(), exe); err != nil {
 		return err
 	}
 	done = true

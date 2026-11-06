@@ -3,6 +3,7 @@ package ui
 import (
 	"os/exec"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/mcbulazs/lazycompose/internal/discover"
@@ -47,6 +48,9 @@ func TestCountRecreated(t *testing.T) {
 }
 
 func TestOpenFolderInTmux(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no tmux on Windows; the fakes use sh")
+	}
 	var gotDir, gotName string
 	orig := tmuxNewWindow
 	t.Cleanup(func() { tmuxNewWindow = orig })
@@ -84,5 +88,20 @@ func TestOpenFolderOutsideTmux(t *testing.T) {
 	_ = openFolder(discover.Env{Dir: "/srv/x"}) // a nested shell, not run here
 	if called {
 		t.Error("tmux should not be used outside tmux")
+	}
+}
+
+func TestUserShell(t *testing.T) {
+	t.Setenv("SHELL", "/usr/bin/fish")
+	if got := userShell(); got != "/usr/bin/fish" {
+		t.Errorf("userShell() = %q, want $SHELL", got)
+	}
+	t.Setenv("SHELL", "")
+	got := userShell()
+	switch {
+	case runtime.GOOS == "windows" && got == "":
+		t.Error("userShell() is empty, want PowerShell or %ComSpec%")
+	case runtime.GOOS != "windows" && got != "sh":
+		t.Errorf("userShell() = %q, want sh", got)
 	}
 }

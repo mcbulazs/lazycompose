@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -138,15 +139,19 @@ func hashFile(path string) [32]byte {
 }
 
 // editorCommand uses the configured editor, then $VISUAL, then $EDITOR,
-// then the first of nvim or vi that is installed. The editor may include
-// arguments, like "code --wait".
+// then the first of nvim or vi (or notepad on Windows) that is installed.
+// The editor may include arguments, like "code --wait".
 func editorCommand(editor, file string) (*exec.Cmd, error) {
 	for _, e := range []string{editor, os.Getenv("VISUAL"), os.Getenv("EDITOR")} {
 		if parts := strings.Fields(e); len(parts) > 0 {
 			return exec.Command(parts[0], append(parts[1:], file)...), nil
 		}
 	}
-	for _, name := range []string{"nvim", "vi"} {
+	editors := []string{"nvim", "vi"}
+	if runtime.GOOS == "windows" {
+		editors = append(editors, "notepad")
+	}
+	for _, name := range editors {
 		if p, err := exec.LookPath(name); err == nil {
 			return exec.Command(p, file), nil
 		}
@@ -377,13 +382,29 @@ func openFolder(e discover.Env) tea.Cmd {
 	}
 }
 
+// userShell is $SHELL, or sh. On Windows, where $SHELL is usually not set,
+// it is PowerShell (pwsh, then the built-in one), then %ComSpec%.
+func userShell() string {
+	if sh := os.Getenv("SHELL"); sh != "" {
+		return sh
+	}
+	if runtime.GOOS != "windows" {
+		return "sh"
+	}
+	for _, name := range []string{"pwsh", "powershell"} {
+		if _, err := exec.LookPath(name); err == nil {
+			return name
+		}
+	}
+	if sh := os.Getenv("ComSpec"); sh != "" {
+		return sh
+	}
+	return "cmd"
+}
+
 // openFolderShell starts the user's shell in the environment's folder.
 func openFolderShell(e discover.Env) tea.Cmd {
-	sh := os.Getenv("SHELL")
-	if sh == "" {
-		sh = "sh"
-	}
-	cmd := exec.Command(sh)
+	cmd := exec.Command(userShell())
 	cmd.Dir = e.Dir
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		// a non-zero exit just means the last command failed

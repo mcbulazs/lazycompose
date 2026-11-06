@@ -3,6 +3,7 @@ package history
 import (
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -111,5 +112,28 @@ func TestPins(t *testing.T) {
 	}
 	if got := Load(path).Pins; !reflect.DeepEqual(got, []string{"/gone", "/b2"}) {
 		t.Errorf("loaded pins %v", got)
+	}
+}
+
+func TestStateDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the home folder comes from USERPROFILE on Windows")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_STATE_HOME", "")
+	for _, goos := range []string{"linux", "darwin"} {
+		if got, _ := stateDir(goos); got != filepath.Join(home, ".local", "state") {
+			t.Errorf("stateDir(%s) = %q, want ~/.local/state", goos, got)
+		}
+	}
+	state := filepath.Join(home, "state")
+	t.Setenv("XDG_STATE_HOME", state)
+	if got, _ := stateDir("darwin"); got != state {
+		t.Errorf("stateDir with XDG_STATE_HOME = %q, want %q", got, state)
+	}
+	t.Setenv("XDG_STATE_HOME", "relative") // not absolute, so ignored
+	if got, _ := stateDir("linux"); got != filepath.Join(home, ".local", "state") {
+		t.Errorf("stateDir with a relative XDG_STATE_HOME = %q, want ~/.local/state", got)
 	}
 }

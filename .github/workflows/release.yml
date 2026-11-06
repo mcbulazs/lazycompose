@@ -17,16 +17,26 @@ jobs:
           go-version-file: go.mod
       - run: go test ./...
       - name: build
+        # lazycompose -update and install.sh depend on these names
         run: |
           mkdir dist
-          for arch in amd64 arm64; do
-            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
-              -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
-              -o lazycompose ./cmd/lazycompose
-            tar -czf dist/lazycompose_linux_$arch.tar.gz lazycompose README.md LICENSE
-            rm lazycompose
+          for os in linux darwin windows; do
+            for arch in amd64 arm64; do
+              bin=lazycompose
+              [ "$os" = windows ] && bin=lazycompose.exe
+              CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+                -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
+                -o "$bin" ./cmd/lazycompose
+              name=lazycompose_${os}_$arch
+              if [ "$os" = windows ]; then
+                zip -q "dist/$name.zip" "$bin" README.md LICENSE
+              else
+                tar -czf "dist/$name.tar.gz" "$bin" README.md LICENSE
+              fi
+              rm "$bin"
+            done
           done
-          cd dist && sha256sum *.tar.gz > checksums.txt
+          cd dist && sha256sum *.tar.gz *.zip > checksums.txt
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}

@@ -42,8 +42,8 @@ func (m *Model) startCreate() tea.Cmd {
 	} else if roots := m.roots(); len(roots) > 0 {
 		start = roots[0]
 	}
-	if start != "" && !strings.HasSuffix(start, "/") {
-		start += "/"
+	if sep := string(filepath.Separator); start != "" && !strings.HasSuffix(start, sep) {
+		start += sep
 	}
 	return m.openPrompt("New environment", "folder to create, enter to create and edit, esc to cancel", start, (*Model).createEnv)
 }

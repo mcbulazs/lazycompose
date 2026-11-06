@@ -78,12 +78,21 @@ main() {
 		esac
 	done
 
-	[ "$(uname -s)" = Linux ] ||
-		die "there are release binaries for Linux only; elsewhere use go install, see the README"
-	case $(uname -m) in
+	case $(uname -s) in
+	Linux) os=linux ;;
+	Darwin) os=darwin ;;
+	MINGW* | MSYS* | CYGWIN*) die "on Windows, download lazycompose_windows_amd64.zip from https://github.com/$repo/releases/latest" ;;
+	*) die "there are release binaries for Linux, macOS and Windows only, not $(uname -s); use go install, see the README" ;;
+	esac
+	m=$(uname -m)
+	# a shell running under Rosetta on Apple silicon says x86_64
+	if [ "$os" = darwin ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
+		m=arm64
+	fi
+	case $m in
 	x86_64 | amd64) arch=amd64 ;;
 	aarch64 | arm64) arch=arm64 ;;
-	*) die "there is no release binary for $(uname -m), only x86_64 and aarch64; use go install, see the README" ;;
+	*) die "there is no release binary for $m, only x86_64 and arm64; use go install, see the README" ;;
 	esac
 	case $version in
 	latest) base=https://github.com/$repo/releases/latest/download ;;
@@ -91,7 +100,7 @@ main() {
 	*) die "the version should look like v0.4.0, not $version" ;;
 	esac
 
-	asset=lazycompose_linux_$arch.tar.gz
+	asset=lazycompose_${os}_$arch.tar.gz
 	tmp=$(mktemp -d)
 	trap 'rm -rf "$tmp"' EXIT
 	trap 'exit 1' INT TERM

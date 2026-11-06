@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"time"
@@ -22,17 +23,28 @@ type History struct {
 }
 
 // DefaultPath is $XDG_STATE_HOME/lazycompose/history.json, or
-// ~/.local/state/lazycompose/history.json.
+// ~/.local/state/lazycompose/history.json. On Windows it is in
+// %LocalAppData%.
 func DefaultPath() string {
-	dir := os.Getenv("XDG_STATE_HOME")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ""
-		}
-		dir = filepath.Join(home, ".local", "state")
+	dir, err := stateDir(runtime.GOOS)
+	if err != nil {
+		return ""
 	}
 	return filepath.Join(dir, "lazycompose", "history.json")
+}
+
+func stateDir(goos string) (string, error) {
+	if goos == "windows" {
+		return os.UserCacheDir() // %LocalAppData%
+	}
+	if dir := os.Getenv("XDG_STATE_HOME"); filepath.IsAbs(dir) {
+		return dir, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "state"), nil
 }
 
 // Load reads the history at path. A missing or broken file gives an empty

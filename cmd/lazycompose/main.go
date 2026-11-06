@@ -8,8 +8,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,12 +71,30 @@ func (r *rootsFlag) Set(v string) error {
 	return nil
 }
 
+// defaultConfigPath is $XDG_CONFIG_HOME/lazycompose/config.yaml, or
+// ~/.config/lazycompose/config.yaml, on macOS too, where terminal tools keep
+// their config there rather than in ~/Library. On Windows it is in
+// %AppData%.
 func defaultConfigPath() string {
-	dir, err := os.UserConfigDir()
+	dir, err := configDir(runtime.GOOS)
 	if err != nil {
 		return ""
 	}
 	return filepath.Join(dir, "lazycompose", "config.yaml")
+}
+
+func configDir(goos string) (string, error) {
+	if goos == "windows" {
+		return os.UserConfigDir()
+	}
+	if dir := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(dir) {
+		return dir, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config"), nil
 }
 
 const defaultConfig = `# lazycompose config
@@ -96,7 +116,8 @@ max_depth: 0
 
 # Editor for the e key. It can include arguments; graphical editors need a
 # flag that waits until the file is closed, like "code --wait".
-# Set it to "" to use $VISUAL, then $EDITOR, then nvim or vi.
+# Set it to "" to use $VISUAL, then $EDITOR, then nvim or vi (or notepad on
+# Windows, where it is "" to begin with).
 editor: vim
 
 # Scroll and click with the mouse. While it is on, hold shift to select
@@ -183,6 +204,24 @@ theme: terminal
 #   quit: [q, ctrl+d]
 `
 
+// defaultEditor is vim, which Linux and macOS have. Windows usually has
+// not, so there the editor is found like when it is set to "".
+func defaultEditor() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	return "vim"
+}
+
+// firstConfig is the config file written on first run, with the default
+// editor filled in.
+func firstConfig(editor string) string {
+	if editor == "vim" {
+		return defaultConfig
+	}
+	return strings.Replace(defaultConfig, "\neditor: vim\n", "\neditor: "+strconv.Quote(editor)+"\n", 1)
+}
+
 // checkConfig reads the config file at path like a start would, to report
 // mistakes after it was edited.
 func checkConfig(path string) error {
@@ -205,7 +244,7 @@ func keyOverrides(keys map[string]keyList) map[string][]string {
 }
 
 func loadConfig(path string) (config, error) {
-	editor, mouse, quick, updates, versions := "vim", true, true, "6h", true
+	editor, mouse, quick, updates, versions := defaultEditor(), true, true, "6h", true
 	cfg := config{Roots: []string{"~"}, Editor: &editor, Mouse: &mouse, Quick: &quick, Updates: &updates, Version: &versions, Filename: stackfs.ComposeName, Theme: ui.DefaultTheme}
 	if path == "" {
 		return cfg, nil
@@ -215,7 +254,7 @@ func loadConfig(path string) (config, error) {
 		// first run: write the defaults so there is a file to edit.
 		// Failing to write is fine, the defaults still apply.
 		if os.MkdirAll(filepath.Dir(path), 0o755) == nil {
-			_ = os.WriteFile(path, []byte(defaultConfig), 0o644)
+			_ = os.WriteFile(path, []byte(firstConfig(defaultEditor())), 0o644)
 		}
 		return cfg, nil
 	}
@@ -359,6 +398,9 @@ func main() {
 	cdFile := flag.String("cd-file", "", "on quit to folder (Q), write the selected folder to this file")
 	flag.Parse()
 
+	if exe, err := os.Executable(); err == nil {
+		selfupdate.RemoveOld(exe) // what an update on Windows moved aside
+	}
 	if *showVersion {
 		fmt.Println("lazycompose", versionString())
 		return

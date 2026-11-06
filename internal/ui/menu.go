@@ -254,10 +254,7 @@ func (m Model) commandFor(name, why string) (short, full, reason string) {
 		if os.Getenv("TMUX") != "" {
 			return "tmux new-window in the folder", shellJoin(tmuxNewWindow(e.Dir, e.Name()).Args), why
 		}
-		sh := os.Getenv("SHELL")
-		if sh == "" {
-			sh = "sh"
-		}
+		sh := userShell()
 		return sh + " (in the folder)", shellJoin([]string{sh}) + " in " + shellQuote(e.Dir), why
 	case "update_all":
 		return "docker compose pull -q, up -d (each running env)", "for each running environment: docker compose -f FILE pull -q, then docker compose -f FILE up -d", why

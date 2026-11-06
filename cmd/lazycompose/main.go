@@ -14,6 +14,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 	"github.com/mcbulazs/lazycompose/internal/history"
 	"github.com/mcbulazs/lazycompose/internal/selfupdate"
@@ -391,6 +392,10 @@ func main() {
 			}
 			os.Exit(1)
 		}
+	}
+	if err := compose.Check(context.Background()); err != nil {
+		fmt.Fprintln(os.Stderr, "lazycompose:", err)
+		os.Exit(1)
 	}
 
 	every, _ := updateEvery(*cfg.Updates) // checked when loading the config

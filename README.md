@@ -20,7 +20,8 @@ stop, restart, pull, edit and tail logs without leaving the terminal.
 
 ## Install
 
-On Linux (x86_64 or ARM64):
+lazycompose needs Docker with the compose plugin (`docker compose`). On
+Linux (x86_64 or ARM64):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mcbulazs/lazycompose/main/install.sh | sh

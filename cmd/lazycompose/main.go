@@ -168,7 +168,7 @@ theme: terminal
 #   next_pane: tab            prev_pane: shift+tab
 #   focus_environments: "1"   focus_services: "2"     focus_logs: "3"
 #   filter: /                 problems: "!"
-#   edit: e                   edit_env: E
+#   edit: e                   edit_env: E             edit_config: c
 #   new_env: n                move_env: m             pin: f
 #   up: u                    down: d                 stop_start: s
 #   restart: r                recreate: R
@@ -182,6 +182,27 @@ theme: terminal
 #   recreate: F
 #   quit: [q, ctrl+d]
 `
+
+// checkConfig reads the config file at path like a start would, to report
+// mistakes after it was edited.
+func checkConfig(path string) error {
+	cfg, err := loadConfig(path)
+	if err != nil {
+		return err
+	}
+	if _, err := ui.LoadTheme(cfg.Theme, cfg.Themes, cfg.Colors); err != nil {
+		return err
+	}
+	return ui.CheckKeys(keyOverrides(cfg.Keys))
+}
+
+func keyOverrides(keys map[string]keyList) map[string][]string {
+	out := map[string][]string{}
+	for name, ks := range keys {
+		out[name] = ks
+	}
+	return out
+}
 
 func loadConfig(path string) (config, error) {
 	editor, mouse, quick, updates, versions := "vim", true, true, "6h", true
@@ -369,11 +390,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "lazycompose:", err)
 		os.Exit(1)
 	}
-	overrides := map[string][]string{}
-	for name, ks := range cfg.Keys {
-		overrides[name] = ks
-	}
-	if err := ui.SetKeys(overrides); err != nil {
+	if err := ui.SetKeys(keyOverrides(cfg.Keys)); err != nil {
 		fmt.Fprintln(os.Stderr, "lazycompose:", err)
 		os.Exit(1)
 	}
@@ -423,6 +440,8 @@ func main() {
 		Version:            versionString(),
 		LatestVersion:      latestVersion,
 		UpdateHint:         updateHint(),
+		ConfigPath:         *configPath,
+		CheckConfig:        func() error { return checkConfig(*configPath) },
 	})
 
 	opts := []tea.ProgramOption{tea.WithAltScreen()}

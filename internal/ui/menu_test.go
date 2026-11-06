@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -152,5 +154,54 @@ func TestShellQuote(t *testing.T) {
 		if got := shellQuote(in); got != want {
 			t.Errorf("shellQuote(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestEditConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	m := New(Options{Hostname: "host", Roots: []string{"/srv"}, Editor: "nano", ConfigPath: path})
+	m = send(m, tea.WindowSizeMsg{Width: 160, Height: 30})
+
+	// listed with the full path, even with no environment selected
+	m = send(m, press(":", "config")...)
+	var found bool
+	for _, i := range m.menu.shown {
+		if en := m.menu.entries[i]; en.name == "edit_config" {
+			found = true
+			if !en.run || en.command != shellJoin([]string{"nano", path}) {
+				t.Errorf("edit_config: run %v, command %q", en.run, en.command)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("searching config should find edit_config, got %v", shownNames(m))
+	}
+
+	checked := errors.New("")
+	m.opts.CheckConfig = func() error { return checked }
+	for _, tc := range []struct {
+		msg     configEditedMsg
+		check   error
+		want    string
+		isError bool
+	}{
+		{configEditedMsg{}, nil, "no changes", false},
+		{configEditedMsg{changed: true}, nil, "restart lazycompose to use it", false},
+		{configEditedMsg{changed: true}, errors.New("keys.explode: unknown action\nmore"), "config: keys.explode: unknown action", true},
+		{configEditedMsg{err: errors.New("no editor found")}, nil, "editor: no editor found", true},
+	} {
+		checked = tc.check
+		m = send(m, tc.msg)
+		if !strings.Contains(m.status, tc.want) || m.statusErr != tc.isError {
+			t.Errorf("%+v: status %q (error %v), want %q", tc.msg, m.status, m.statusErr, tc.want)
+		}
+	}
+
+	// without a config file it says why
+	m = New(Options{Hostname: "host", Roots: []string{"/srv"}, Editor: "nano"})
+	m = send(m, tea.WindowSizeMsg{Width: 160, Height: 30})
+	m = send(m, press("c")...)
+	if !strings.Contains(m.status, "no config file") {
+		t.Errorf("c without a config file: status %q", m.status)
 	}
 }

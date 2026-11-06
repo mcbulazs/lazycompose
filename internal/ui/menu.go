@@ -47,6 +47,7 @@ var menuInfos = map[string]menuInfo{
 	"problems":           {"Show only environments with problems", "errors unhealthy failed", false},
 	"edit":               {"Edit the compose file", "open editor yaml", false},
 	"edit_env":           {"Edit the .env file, created if missing", "variables environment secrets", false},
+	"edit_config":        {"Edit the lazycompose config file", "settings options preferences configuration yaml", false},
 	"new_env":            {"Create an environment", "add new folder stack", false},
 	"move_env":           {"Move or rename the environment", "rename folder", false},
 	"pin":                {"Pin to quick access, or unpin", "favourite favorite star top", false},
@@ -179,6 +180,9 @@ func recentRank(recent []string, name string) int {
 // commandFor returns the command an action runs on the current selection,
 // short and in full, or why it cannot run.
 func (m Model) commandFor(name, why string) (short, full, reason string) {
+	if name == "edit_config" {
+		return m.configCommand(why)
+	}
 	e, svc, ok := m.target()
 	needsEnv := !slices.Contains([]string{"filter", "problems", "new_env", "update_all", "clean_images", "zoom", "compose_view", "refresh", "quit", "commands", "help"}, name) && !menuInfos[name].nav
 	if !ok {
@@ -578,4 +582,21 @@ func (m Model) withMenu(view string) string {
 	}
 	x, y, _, _ := m.menuBox()
 	return overlay(view, m.menuView(), x, y)
+}
+
+// configCommand is the editor command for the config file, shown with the
+// full path so the menu also tells where the config lives.
+func (m Model) configCommand(why string) (short, full, reason string) {
+	if m.opts.ConfigPath == "" {
+		if why == "" {
+			why = "no config file, lazycompose was started with -config \"\""
+		}
+		return "", "", why
+	}
+	cmd, err := editorCommand(m.opts.Editor, m.opts.ConfigPath)
+	if err != nil {
+		return "", "", err.Error()
+	}
+	full = shellJoin(cmd.Args)
+	return full, full, why
 }

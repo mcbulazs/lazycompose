@@ -42,6 +42,10 @@ type (
 		before [32]byte
 		err    error
 	}
+	configEditedMsg struct {
+		changed bool
+		err     error
+	}
 	validateMsg struct {
 		env discover.Env
 		err error
@@ -159,6 +163,18 @@ func openEditor(editor string, e discover.Env, file string) tea.Cmd {
 	before := hashFile(file)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return editorMsg{env: e, file: file, before: before, err: err}
+	})
+}
+
+// openConfigEditor edits the lazycompose config file.
+func openConfigEditor(editor, file string) tea.Cmd {
+	cmd, err := editorCommand(editor, file)
+	if err != nil {
+		return func() tea.Msg { return configEditedMsg{err: err} }
+	}
+	before := hashFile(file)
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return configEditedMsg{changed: hashFile(file) != before, err: err}
 	})
 }
 

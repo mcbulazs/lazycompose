@@ -15,7 +15,7 @@ type keyMap struct {
 	MoveUp, MoveDown, NextPane, PrevPane     key.Binding
 	FocusEnvs, FocusServices, FocusLogs      key.Binding
 	Filter, Problems                         key.Binding
-	Edit, EditEnv                            key.Binding
+	Edit, EditEnv, EditConfig                key.Binding
 	NewEnv, MoveEnv, Pin                     key.Binding
 	Start, Stop, Restart, Recreate, Toggle   key.Binding
 	Pull, UpdateAll                          key.Binding
@@ -44,6 +44,7 @@ var actions = []action{
 	{"problems", []string{"!"}, "problems only", func(k *keyMap) *key.Binding { return &k.Problems }},
 	{"edit", []string{"e"}, "edit", func(k *keyMap) *key.Binding { return &k.Edit }},
 	{"edit_env", []string{"E"}, "edit env file", func(k *keyMap) *key.Binding { return &k.EditEnv }},
+	{"edit_config", []string{"c"}, "edit config", func(k *keyMap) *key.Binding { return &k.EditConfig }},
 	{"new_env", []string{"n"}, "new environment", func(k *keyMap) *key.Binding { return &k.NewEnv }},
 	{"move_env", []string{"m"}, "move/rename", func(k *keyMap) *key.Binding { return &k.MoveEnv }},
 	{"pin", []string{"f"}, "pin/unpin", func(k *keyMap) *key.Binding { return &k.Pin }},
@@ -111,6 +112,12 @@ func SetKeys(overrides map[string][]string) error {
 	}
 	keys = k
 	return nil
+}
+
+// CheckKeys reports what SetKeys would refuse, without changing the keys.
+func CheckKeys(overrides map[string][]string) error {
+	_, err := buildKeys(overrides)
+	return err
 }
 
 func buildKeys(overrides map[string][]string) (keyMap, error) {

@@ -162,3 +162,22 @@ func TestLoadConfigComposeFilename(t *testing.T) {
 		t.Errorf("a name the scan does not find should be an error listing the names, got %v", err)
 	}
 }
+
+func TestCheckConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	for data, ok := range map[string]bool{
+		"roots: [/srv]\n":                  true,
+		"theme: nope\n":                    false,
+		"keys:\n  explode: x\n":            false,
+		"keys:\n  restart: d\n":            false,
+		"roots: [\n":                       false,
+		"keys:\n  edit_config: [ctrl+o]\n": true,
+	} {
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := checkConfig(path); (err == nil) != ok {
+			t.Errorf("%q: checkConfig = %v, want ok %v", data, err, ok)
+		}
+	}
+}

@@ -62,6 +62,11 @@ type Options struct {
 	UpdateHint string
 	// UpdateEvery is how often to ask registries for newer images; 0 is never
 	UpdateEvery time.Duration
+	// ConfigPath is the config file, edited with edit_config; "" means none
+	ConfigPath string
+	// CheckConfig reads the config file again after it was edited, to report
+	// mistakes; nil skips the check
+	CheckConfig func() error
 	// QuickAccess shows the most used environments at the top of the list
 	QuickAccess bool
 	// History records environment use for quick access; nil records nothing
@@ -382,7 +387,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handedOver reports messages sent when the editor or a shell has exited.
 func handedOver(msg tea.Msg) bool {
 	switch msg.(type) {
-	case editorMsg, shellMsg, folderShellMsg:
+	case editorMsg, configEditedMsg, shellMsg, folderShellMsg:
 		return true
 	}
 	return false
@@ -572,6 +577,23 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, tea.Batch(m.startBusy("validating "+msg.env.Rel), validate(msg.env))
+
+	case configEditedMsg:
+		switch {
+		case msg.err != nil:
+			m.setStatus("editor: "+msg.err.Error(), true)
+		case !msg.changed:
+			m.setStatus("no changes", false)
+		default:
+			if m.opts.CheckConfig != nil {
+				if err := m.opts.CheckConfig(); err != nil {
+					m.setStatus("config: "+firstLine(err.Error())+"; fix it, or lazycompose will not start", true)
+					return m, nil
+				}
+			}
+			m.setStatus("config saved; restart lazycompose to use it", false)
+		}
+		return m, nil
 
 	case validateMsg:
 		m.busy = max(0, m.busy-1)
@@ -908,6 +930,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setPaneMode(modeCompose)
 		}
 		return m, nil
+
+	case key.Matches(msg, keys.EditConfig):
+		if _, _, why := m.configCommand(""); why != "" {
+			m.setStatus(why, true)
+			return m, nil
+		}
+		return m, openConfigEditor(m.opts.Editor, m.opts.ConfigPath)
 
 	case key.Matches(msg, keys.Refresh):
 		m.composeTarget = logTarget{} // read the compose file again

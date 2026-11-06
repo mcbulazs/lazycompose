@@ -57,7 +57,8 @@ lazycompose -root /srv/stacks
 ```
 
 The first run creates `~/.config/lazycompose/config.yaml`, with a comment for
-every option. Set `roots` there to make the folder permanent.
+every option. Set `roots` there to make the folder permanent; `c` opens it
+from inside lazycompose.
 
 ## Keys
 
@@ -73,6 +74,7 @@ every option. Set `roots` there to make the folder permanent.
 | `n` / `m` | New environment / move or rename it |
 | `f` | Pin to the top of the list |
 | `e` / `E` | Edit the compose file / `.env` |
+| `c` | Edit the lazycompose config |
 | `x` / `X` | Shell in the container / in the folder |
 | `/` | Filter, or search the logs |
 | `q` / `Q` | Quit / quit to the folder |

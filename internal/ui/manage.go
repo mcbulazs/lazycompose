@@ -258,11 +258,11 @@ func (m *Model) confirmMove(e, to discover.Env, warnings []string) tea.Cmd {
 	if stop {
 		verb = "Stop and move"
 	}
-	m.confirm = &confirm{
+	return m.ask(&confirm{
+		title:  verb,
 		prompt: fmt.Sprintf("%s %s to %s? (y/n)", verb, e.Rel, to.Rel),
 		onYes:  func(m *Model) tea.Cmd { return m.doMove(e, to, stop) },
-	}
-	return nil
+	})
 }
 
 func (m *Model) doMove(from, to discover.Env, stop bool) tea.Cmd {

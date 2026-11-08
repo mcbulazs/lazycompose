@@ -81,6 +81,22 @@ type envList struct {
 	quickN int             // quick access rows that are shown
 }
 
+// groupLess orders folders as a tree: a folder's own environments (the
+// shorter path) before its subfolders, and names compared a folder level
+// at a time.
+func groupLess(a, b string) bool {
+	if a == "" || b == "" {
+		return a == "" && b != ""
+	}
+	pa, pb := strings.Split(a, "/"), strings.Split(b, "/")
+	for i := range min(len(pa), len(pb)) {
+		if pa[i] != pb[i] {
+			return pa[i] < pb[i]
+		}
+	}
+	return len(pa) < len(pb)
+}
+
 // groupKey names a folder heading: its root and the folder.
 func groupKey(root, group string) string { return root + "\x00" + group }
 
@@ -159,11 +175,8 @@ func (l *envList) setEnvs(envs []discover.Env) {
 		if ra, rb := order[a.env.Root], order[b.env.Root]; ra != rb {
 			return ra < rb
 		}
-		if (a.group == "") != (b.group == "") {
-			return a.group == ""
-		}
 		if a.group != b.group {
-			return a.group < b.group
+			return groupLess(a.group, b.group)
 		}
 		return a.env.Name() < b.env.Name()
 	})
@@ -284,22 +297,31 @@ func (l *envList) rebuildAt(sel selection) {
 			}
 			depth = 1
 		}
-		group := ""
+		// a tree of folders: each level its own heading under its parent,
+		// a folder's environments before its subfolders
+		var shown []string // the folder path of the last row, by level
 		for _, i := range idx {
 			it := l.items[i]
-			if it.group == "" {
-				l.rows = append(l.rows, listRow{kind: rowEnv, item: i, depth: depth})
-				continue
+			var parts []string
+			if it.group != "" {
+				parts = strings.Split(it.group, "/")
 			}
-			k := groupKey(r.key, it.group)
-			if it.group != group {
-				group = it.group
-				l.rows = append(l.rows, listRow{kind: rowGroup, key: k, label: it.group, depth: depth})
+			same := 0
+			for same < len(parts) && same < len(shown) && parts[same] == shown[same] {
+				same++
 			}
-			if l.closed[k] && !l.filtering() {
-				continue
+			shown = parts
+			hidden := false
+			for lvl := range parts {
+				k := groupKey(r.key, strings.Join(parts[:lvl+1], "/"))
+				if lvl >= same && !hidden {
+					l.rows = append(l.rows, listRow{kind: rowGroup, key: k, label: parts[lvl], depth: depth + lvl})
+				}
+				hidden = hidden || l.closed[k] && !l.filtering()
 			}
-			l.rows = append(l.rows, listRow{kind: rowEnv, item: i, depth: depth + 1})
+			if !hidden {
+				l.rows = append(l.rows, listRow{kind: rowEnv, item: i, depth: depth + len(parts)})
+			}
 		}
 	}
 
@@ -308,11 +330,11 @@ func (l *envList) rebuildAt(sel selection) {
 		switch {
 		case prev.kind == rowEnv && l.selectItem(prevEnv):
 		case prev.kind == rowEnv:
-			// its heading was closed: stay on that heading, or on its root
-			// when the root was closed
-			if !l.selectKey(groupKey(prevEnv.env.Root, prevEnv.group)) {
-				l.selectKey(prevEnv.env.Root)
-			}
+			// a heading above it was closed: stay on the nearest one shown
+			l.selectNearest(prevEnv.env.Root, prevEnv.group)
+		case prev.kind == rowGroup && !l.selectKey(prev.key):
+			root, folder, _ := strings.Cut(prev.key, "\x00")
+			l.selectNearest(root, folder)
 		default:
 			l.selectKey(prev.key)
 		}
@@ -351,17 +373,15 @@ func (l envList) clickable(i int) bool {
 	return k == rowEnv || k == rowGroup || k == rowRoot
 }
 
-// selectable reports whether the cursor stops on row i: environments, and
-// headings that are closed, so they can be opened. Open headings are
-// passed over, as before headings could close; left closes the heading of
-// an environment, a click any heading.
+// selectable reports whether the cursor stops on row i: environments and
+// headings, which enter and space open and close. While filtering the
+// headings only label what matches.
 func (l envList) selectable(i int) bool {
-	r := l.rows[i]
-	switch r.kind {
+	switch l.rows[i].kind {
 	case rowEnv:
 		return true
 	case rowGroup, rowRoot:
-		return l.closed[r.key] && !l.filtering()
+		return !l.filtering()
 	}
 	return false
 }
@@ -423,6 +443,22 @@ func (l *envList) selectQuick(n int) {
 			}
 		}
 	}
+}
+
+// selectNearest selects the deepest heading shown of folder in root, or
+// the root.
+func (l *envList) selectNearest(root, folder string) {
+	for f := folder; f != ""; {
+		if l.selectKey(groupKey(root, f)) {
+			return
+		}
+		if i := strings.LastIndex(f, "/"); i >= 0 {
+			f = f[:i]
+		} else {
+			f = ""
+		}
+	}
+	l.selectKey(root)
 }
 
 // selectKey selects the heading key, and reports whether it is shown.
@@ -512,9 +548,12 @@ func (l *envList) setOpen(key string, open bool) {
 func (l envList) headingOf(i int) (string, bool) {
 	r := l.rows[i]
 	switch {
-	case r.kind == rowGroup && l.multi:
-		root, _, _ := strings.Cut(r.key, "\x00")
-		return root, true
+	case r.kind == rowGroup:
+		root, folder, _ := strings.Cut(r.key, "\x00")
+		if i := strings.LastIndex(folder, "/"); i >= 0 {
+			return groupKey(root, folder[:i]), true
+		}
+		return root, l.multi
 	case r.kind != rowEnv || l.items[r.item].quick:
 		return "", false
 	}
@@ -535,7 +574,8 @@ func (l envList) rowEnvs(r listRow) []discover.Env {
 		if it.quick {
 			continue
 		}
-		if r.kind == rowRoot && it.env.Root == r.key || r.kind == rowGroup && groupKey(it.env.Root, it.group) == r.key {
+		g := groupKey(it.env.Root, it.group)
+		if r.kind == rowRoot && it.env.Root == r.key || r.kind == rowGroup && (g == r.key || strings.HasPrefix(g, r.key+"/")) {
 			out = append(out, it.env)
 		}
 	}

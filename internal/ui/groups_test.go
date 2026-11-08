@@ -102,8 +102,17 @@ func TestOpenClose(t *testing.T) {
 	}
 	m.list.selectKey(groupKey("/a", "web"))
 	m = send(m, press("right")...)
-	if got := rowsOf(m.list); got != "▾b,app,▾a,plex,▾web,blog,shop" || selected(m) != "web/blog" {
-		t.Errorf("rows %s, selected %q", got, selected(m))
+	if r, _ := m.list.selectedHeading(); rowsOf(m.list) != "▾b,app,▾a,plex,▾web,blog,shop" || r.label != "web" {
+		t.Errorf("rows %s, selected %+v", rowsOf(m.list), r)
+	}
+	// space closes and opens the selected heading
+	m = send(m, press("space")...)
+	if got := rowsOf(m.list); got != "▾b,app,▾a,plex,▸web" {
+		t.Errorf("space should close it: %s", got)
+	}
+	m = send(m, press("space")...)
+	if got := rowsOf(m.list); got != "▾b,app,▾a,plex,▾web,blog,shop" {
+		t.Errorf("space should open it: %s", got)
 	}
 	if len(h.Closed) != 0 {
 		t.Errorf("opening should be remembered: %v", h.Closed)
@@ -130,8 +139,17 @@ func TestClickHeading(t *testing.T) {
 		t.Errorf("a click closes a heading: %s", got)
 	}
 	m = send(m, click(5, 3))
-	if got := rowsOf(m.list); got != "plex,▾games,mc,▾web,blog,shop" || selected(m) != "games/mc" {
-		t.Errorf("a second click opens it: %s, selected %q", got, selected(m))
+	if got := rowsOf(m.list); got != "plex,▾games,mc,▾web,blog,shop" {
+		t.Errorf("a second click opens it: %s", got)
+	}
+	// moving stops on headings, open or closed
+	m = send(m, press("down")...)
+	if selected(m) != "games/mc" {
+		t.Errorf("down from the games heading: %q", selected(m))
+	}
+	m = send(m, press("down")...)
+	if r, ok := m.list.selectedHeading(); !ok || r.label != "web" {
+		t.Errorf("down should stop on the open web heading, got %+v", r)
 	}
 }
 
@@ -202,5 +220,59 @@ func TestMergeEnvs(t *testing.T) {
 	got := mergeEnvs(old, []discover.Env{{Root: "ssh://h/s", Dir: "ssh://h/s/new"}}, []string{"ssh://h/s"})
 	if len(got) != 2 || got[0].Dir != "/a/x" || got[1].Dir != "ssh://h/s/new" {
 		t.Errorf("merged %+v", got)
+	}
+}
+
+func TestFolderTree(t *testing.T) {
+	envs := []discover.Env{}
+	for _, rel := range []string{"infra/traefik", "infra/monitoring/metrics", "infra/monitoring/umami", "infra-x/old", "infra/adguard", "media/arr", "top"} {
+		envs = append(envs, discover.Env{Root: "/srv", Rel: rel, Dir: "/srv/" + rel, File: "/srv/" + rel + "/compose.yaml"})
+	}
+	m := New(Options{Hostname: "host", Roots: []string{"/srv"}, Envs: envs, History: history.Load("")})
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	// subfolders sit inside their folder, after its own stacks
+	want := "top,▾infra,adguard,traefik,▾monitoring,metrics,umami,▾infra-x,old,▾media,arr"
+	if got := rowsOf(m.list); got != want {
+		t.Fatalf("rows\n%s\nwant\n%s", got, want)
+	}
+	depth := map[string]int{}
+	for _, r := range m.list.rows {
+		name := r.label
+		if r.kind == rowEnv {
+			name = m.list.items[r.item].env.Name()
+		}
+		depth[name] = r.depth
+	}
+	if depth["infra"] != 0 || depth["traefik"] != 1 || depth["monitoring"] != 1 || depth["metrics"] != 2 {
+		t.Errorf("depths %v", depth)
+	}
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "  ▾ monitoring/") || strings.Contains(v, "infra/monitoring/") {
+		t.Errorf("the subfolder should show by its own name, indented:\n%s", v)
+	}
+
+	// closing a folder hides its subfolders, and counts them
+	m = send(m, servicesMsg{services: map[string][]string{"/srv/infra/monitoring/metrics": {"a", "b"}, "/srv/infra/traefik": {"t"}}},
+		statesMsg{states: map[string]*compose.DirState{"/srv/infra/monitoring/metrics": running("a", "b")}})
+	m.list.selectDir("/srv/infra/monitoring/umami")
+	m.list.selectKey(groupKey("/srv", "infra"))
+	m = send(m, press("enter")...)
+	if got := rowsOf(m.list); got != "top,▸infra,▾infra-x,old,▾media,arr" {
+		t.Errorf("rows %s", got)
+	}
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "▸ infra/") || !strings.Contains(v, "2/3") {
+		t.Errorf("a closed folder should count its subfolders (2 of 3 running):\n%s", v)
+	}
+	m = send(m, press("enter")...)
+
+	// left on a stack in the subfolder closes the subfolder only, and left
+	// again on it closes its parent
+	m.list.selectDir("/srv/infra/monitoring/umami")
+	m = send(m, press("left")...)
+	if got := rowsOf(m.list); got != "top,▾infra,adguard,traefik,▸monitoring,▾infra-x,old,▾media,arr" {
+		t.Errorf("rows %s", got)
+	}
+	m = send(m, press("left")...)
+	if r, _ := m.list.selectedHeading(); rowsOf(m.list) != "top,▸infra,▾infra-x,old,▾media,arr" || r.label != "infra" {
+		t.Errorf("rows %s, selected %+v", rowsOf(m.list), r)
 	}
 }

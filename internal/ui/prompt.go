@@ -18,6 +18,10 @@ type pathPrompt struct {
 	err   string
 	// submit runs on enter. An error keeps the box open and shows it.
 	submit func(m *Model, value string) (tea.Cmd, error)
+	// cancel runs when the box is closed without submitting
+	cancel func(m *Model) tea.Cmd
+	// raw passes the value as typed, spaces included, as a password needs
+	raw bool
 }
 
 func (m *Model) openPrompt(title, hint, value string, submit func(m *Model, value string) (tea.Cmd, error)) tea.Cmd {
@@ -35,11 +39,13 @@ func (m Model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	p := m.prompt
 	switch msg.String() {
 	case "esc":
-		m.prompt = nil
-		m.setStatus("cancelled", false)
-		return m, nil
+		return m.cancelPrompt()
 	case "enter":
-		cmd, err := p.submit(&m, strings.TrimSpace(p.input.Value()))
+		value := p.input.Value()
+		if !p.raw {
+			value = strings.TrimSpace(value)
+		}
+		cmd, err := p.submit(&m, value)
 		if err != nil {
 			p.err = err.Error()
 			return m, nil
@@ -67,7 +73,9 @@ func (p *pathPrompt) view(w int) string {
 			lines = append(lines, redStyle.Render(l))
 		}
 	} else {
-		lines = append(lines, dimStyle.Render(ansi.Truncate(p.hint, inner, "…")))
+		for _, l := range strings.Split(ansi.Wrap(p.hint, inner, `/\ `), "\n") {
+			lines = append(lines, dimStyle.Render(l))
+		}
 	}
 	return pane(p.title, strings.Join(lines, "\n"), w, len(lines)+2, true)
 }
@@ -114,8 +122,18 @@ func (m Model) handlePromptMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	x, y, w, box := m.promptBox()
 	if msg.X < x || msg.X >= x+w || msg.Y < y || msg.Y >= y+lipgloss.Height(box) {
-		m.prompt = nil
-		m.setStatus("cancelled", false)
+		return m.cancelPrompt()
+	}
+	return m, nil
+}
+
+// cancelPrompt closes the prompt without submitting it.
+func (m Model) cancelPrompt() (tea.Model, tea.Cmd) {
+	p := m.prompt
+	m.prompt = nil
+	m.setStatus("cancelled", false)
+	if p.cancel != nil {
+		return m, p.cancel(&m)
 	}
 	return m, nil
 }

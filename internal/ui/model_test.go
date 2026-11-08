@@ -113,7 +113,7 @@ func TestListOrder(t *testing.T) {
 
 func TestMoveAndFilter(t *testing.T) {
 	m := newTestModel(t)
-	m = send(m, press("down", "down")...)
+	m = send(m, press("down", "down", "down", "down")...)
 	if selected(m) != "web/blog" {
 		t.Fatalf("selected %q, want web/blog", selected(m))
 	}
@@ -166,7 +166,7 @@ func TestServicesTable(t *testing.T) {
 	m := newTestModel(t)
 	// switching envs empties the table first, which is where the cursor
 	// used to get stuck at -1
-	m = send(m, press("down")...)
+	m = send(m, press("down", "down")...)
 	if selected(m) != "games/mc" {
 		t.Fatalf("selected %q", selected(m))
 	}
@@ -400,13 +400,13 @@ func TestMouse(t *testing.T) {
 		t.Errorf("click selected %q, want games/mc", selected(m))
 	}
 	m = send(m, click(5, 3), click(5, 3)) // a group header closes, then opens again
-	if selected(m) != "games/mc" {
-		t.Errorf("closing and opening a header should land on games/mc, got %q", selected(m))
+	if r, ok := m.list.selectedHeading(); !ok || r.label != "games" || m.list.closed[r.key] {
+		t.Errorf("clicking a header twice should leave it open and selected, got %+v", r)
 	}
 
-	m = send(m, tea.MouseMsg{X: 5, Y: 6, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	m = send(m, click(5, 6))
 	if selected(m) != "web/blog" {
-		t.Errorf("wheel selected %q, want web/blog", selected(m))
+		t.Errorf("click selected %q, want web/blog", selected(m))
 	}
 
 	m = send(m,
@@ -458,8 +458,11 @@ func TestEditorResult(t *testing.T) {
 
 	// a valid config asks before applying
 	m = send(m, validateMsg{env: env("plex")})
-	if m.confirm == nil || m.confirm.prompt != "Apply changes? (y or u = up -d / n)" {
+	if m.confirm == nil || m.confirm.title != "Apply changes" || !strings.Contains(m.confirm.prompt, "config is ok for plex") {
 		t.Errorf("expected apply prompt, got %+v", m.confirm)
+	}
+	if yes, _ := m.confirm.buttons(); yes != " y/u yes " {
+		t.Errorf("the yes button should name u too: %q", yes)
 	}
 }
 
@@ -528,8 +531,8 @@ func TestApplyWithUpKey(t *testing.T) {
 	}
 	m = newTestModel(t)
 	m = send(m, validateMsg{env: env("plex")})
-	if !strings.Contains(m.confirm.prompt, "y or a = up -d") {
-		t.Errorf("prompt %q should offer a", m.confirm.prompt)
+	if yes, _ := m.confirm.buttons(); yes != " y/a yes " {
+		t.Errorf("the yes button %q should offer a", yes)
 	}
 	if m = send(m, press("u")...); m.confirm == nil {
 		t.Error("u should do nothing once up is on another key")
@@ -544,8 +547,8 @@ func TestApplyWithUpKey(t *testing.T) {
 	}
 	m = newTestModel(t)
 	m = send(m, validateMsg{env: env("plex")})
-	if m.confirm.prompt != "Apply changes? (y = up -d / n)" {
-		t.Errorf("prompt %q", m.confirm.prompt)
+	if yes, _ := m.confirm.buttons(); yes != " y yes " {
+		t.Errorf("yes button %q", yes)
 	}
 }
 
@@ -572,7 +575,7 @@ func TestStatsInTable(t *testing.T) {
 	}
 
 	// switching env drops the old numbers
-	m = send(m, press("down")...)
+	m = send(m, press("down", "down")...)
 	if m.stats != nil {
 		t.Errorf("stats should be cleared on env switch")
 	}
@@ -663,7 +666,7 @@ func TestLogsFollowSelection(t *testing.T) {
 	first := m.autoID
 
 	// moving on before the selection settles replaces the pending fetch
-	m = send(m, press("down")...)
+	m = send(m, press("down", "down")...)
 	if m.pendingLogs.dir != "/srv/games/mc" || m.autoID == first {
 		t.Fatalf("pending %+v after moving", m.pendingLogs)
 	}
@@ -760,7 +763,7 @@ func TestQuitToFolder(t *testing.T) {
 	// with it, the selected folder is handed back and the app quits
 	m = New(Options{Hostname: "host", Roots: []string{"/srv"}, Envs: testEnvs(), CdFile: "/tmp/x"})
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 30})
-	m = send(m, press("down")...)
+	m = send(m, press("down", "down")...)
 	next, cmd = m.Update(press("Q")[0])
 	m = next.(Model)
 	if m.QuitDir() != "/srv/games/mc" {
@@ -861,7 +864,7 @@ func TestQuickAccess(t *testing.T) {
 	}
 
 	// an action counts as a use, moving does not
-	m = send(m, press("j", "j", "j")...)
+	m = send(m, press("j", "j", "j", "j", "j")...)
 	if selected(m) != "games/mc" {
 		t.Fatalf("selected %q, want games/mc", selected(m))
 	}
@@ -896,7 +899,7 @@ func TestPin(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// games/mc in the main list: pinning shows it first right away
-	m = send(m, press("j", "j")...)
+	m = send(m, press("j", "j", "j")...)
 	if selected(m) != "games/mc" {
 		t.Fatalf("selected %q, want games/mc", selected(m))
 	}

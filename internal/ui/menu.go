@@ -57,7 +57,7 @@ var menuInfos = map[string]menuInfo{
 	"up":                 {"Start or update the containers", "start create run", false},
 	"down":               {"Stop and remove the containers (asks first)", "stop remove", false},
 	"stop_start":         {"Stop the selected service, or start it", "toggle", false},
-	"restart":            {"Restart the containers", "reboot", false},
+	"restart":            {"Restart the containers (asks first)", "reboot", false},
 	"recreate":           {"Force recreate the containers (asks first)", "force", false},
 	"pull":               {"Pull newer images", "download update", false},
 	"update_all":         {"Update every running environment (asks first)", "upgrade everything", false},
@@ -77,8 +77,8 @@ var menuInfos = map[string]menuInfo{
 
 // fixedEntries are keys that cannot be rebound, listed in the keys window.
 var fixedEntries = []menuEntry{
-	{keys: "← / →", desc: "In the list: close the group of the selection / open a closed one"},
-	{keys: "enter / space", desc: "In the list: open or close a group; connect a remote root"},
+	{keys: "enter / space", desc: "In the list: open or close the selected heading; connect a remote root"},
+	{keys: "← / →", desc: "In the list: close the group of the selection / open a closed heading"},
 	{keys: "/", desc: "In the log pane: search the logs"},
 	{keys: "n / N", desc: "While searching the logs: older / newer match"},
 	{keys: "g / G", desc: "In the log pane: jump to the top / bottom"},
@@ -191,6 +191,11 @@ func (m Model) commandFor(name, why string) (short, full, reason string) {
 		return m.configCommand(why)
 	case "open_logs":
 		return m.logsCommand(why)
+	}
+	if r, ok := m.list.selectedHeading(); ok && m.focus == focusEnvs {
+		if s, ok := m.headingCommand(name, r); ok {
+			return s, s, why
+		}
 	}
 	e, svc, ok := m.target()
 	if ok && e.Remote() && localOnly[name] && why == "" {

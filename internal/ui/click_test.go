@@ -80,8 +80,16 @@ func TestConfirmButtons(t *testing.T) {
 	if m.confirm == nil {
 		t.Fatal("R should ask first")
 	}
-	if v := ansi.Strip(m.statusView()); strings.Contains(v, "(y/n)") || !strings.Contains(v, "y yes") {
-		t.Errorf("the question should show buttons: %q", v)
+	v := ansi.Strip(m.View())
+	if strings.Contains(v, "(y/n)") || !strings.Contains(v, "y yes") || !strings.Contains(v, "Force recreate") {
+		t.Errorf("the question should show as a box with buttons:\n%s", v)
+	}
+	if strings.Contains(ansi.Strip(m.statusView()), "y yes") {
+		t.Error("the status line should not repeat the question")
+	}
+	// a click outside the buttons does nothing
+	if m = send(m, click(0, 0)); m.confirm == nil {
+		t.Error("a click outside should keep the question")
 	}
 	x, y := screenFind(t, m, "n no")
 	if m = send(m, click(x, y)); m.confirm != nil || m.status != "cancelled" {

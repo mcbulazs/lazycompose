@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/mcbulazs/lazycompose/internal/remote"
 )
 
 // Temporary files and folders carry the id of the lazycompose process that
@@ -13,7 +15,7 @@ import (
 // those of a lazycompose that did not get to, after a crash.
 
 // tempPrefixes start the names of the temporary files and folders.
-var tempPrefixes = []string{editDirPrefix, logsFilePrefix}
+var tempPrefixes = []string{editDirPrefix, logsFilePrefix, remote.AskpassDirPrefix}
 
 // RemoveLeftovers removes the temporary files and folders whose process is
 // no longer running.

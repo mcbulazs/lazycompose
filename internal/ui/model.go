@@ -42,6 +42,11 @@ type Options struct {
 	Find   func(roots []string) ([]discover.Env, error)
 	Theme  Theme
 	Editor string
+	// NoConfirm runs actions without asking first
+	NoConfirm bool
+	// AfterEdit is what happens after a valid edit: AfterEditAsk (also ""),
+	// AfterEditApply or AfterEditCheck
+	AfterEdit string
 	// CdFile receives the selected folder when quitting with quit_to_folder
 	CdFile string
 	// Mouse is set when the program runs with mouse support
@@ -80,7 +85,15 @@ type Options struct {
 // quickSize is how many environments quick access shows at most.
 const quickSize = 5
 
+// What happens after a valid edit of a compose or env file.
+const (
+	AfterEditAsk   = "ask"   // ask whether to apply it with up -d
+	AfterEditApply = "apply" // apply it with up -d
+	AfterEditCheck = "check" // only check it
+)
+
 type confirm struct {
+	title  string // the box's title; "" is "Are you sure?"
 	prompt string
 	onYes  func(m *Model) tea.Cmd
 	// yes is another key that answers yes, like the up key for applying
@@ -146,11 +159,15 @@ type Model struct {
 	// hosts are the machines with roots: nil for this one, if it has
 	// roots, and each remote host
 	hosts          []*remote.Host
-	hostErrs       map[string]string // the last error of each host, by hostKey
-	connecting     map[string]bool   // hosts being connected, by hostKey
-	afterScan      envItem           // what to select once a scan of a new host is in
-	edit           *editWatch        // the file being edited, if any
-	leftovers      []string          // temporary files and folders to remove when quitting
+	hostErrs       map[string]string             // the last error of each host, by hostKey
+	connecting     map[string]bool               // hosts being connected, by hostKey
+	logins         map[string]context.CancelFunc // running logins, by hostKey
+	asker          *remote.Asker                 // asks ssh's login questions, made when first needed
+	askWaiting     bool                          // something waits for the next question
+	autoConnect    *remote.Host                  // a single remote root, connected at the start
+	afterScan      envItem                       // what to select once a scan of a new host is in
+	edit           *editWatch                    // the file being edited, if any
+	leftovers      []string                      // temporary files and folders to remove when quitting
 	editID         int
 	events         map[string]*eventStream
 	eventsStarting map[string]bool
@@ -208,7 +225,14 @@ func New(opts Options) Model {
 		m.loadingPS = true
 	}
 	m.hosts = startHosts(opts.Roots, opts.Envs)
+	if len(opts.Roots) == 1 {
+		// one remote root has no heading to open: connect right away
+		if h, _, err := remote.Parse(opts.Roots[0]); err == nil && !m.connected(h) {
+			m.autoConnect = h
+		}
+	}
 	m.connecting = map[string]bool{}
+	m.logins = map[string]context.CancelFunc{}
 	m.closeAtStart()
 	m.hostErrs = map[string]string{}
 	m.events = map[string]*eventStream{}
@@ -225,6 +249,13 @@ func New(opts Options) Model {
 }
 
 func (m Model) Init() tea.Cmd {
+	if h := m.autoConnect; h != nil {
+		return tea.Batch(m.init(), func() tea.Msg { return connectMsg{host: h} })
+	}
+	return m.init()
+}
+
+func (m Model) init() tea.Cmd {
 	if m.scanning {
 		return tea.Batch(m.spin.Tick, rediscover(m.opts.Find, m.activeRoots()), loadStates(m.hosts), tick(pollEvery), m.startAllEvents(true), m.firstUpdateCheck(), m.firstVersionCheck())
 	}
@@ -464,6 +495,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case hostCheckedMsg:
 		return m, m.onHostChecked(msg)
 
+	case connectMsg:
+		return m, m.connect(msg.host)
+
+	case questionMsg:
+		return m, m.onQuestion(msg)
+
 	case hostLoginMsg:
 		return m, m.onHostLogin(msg)
 
@@ -526,6 +563,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case servicesMsg:
+		if msg.err != nil {
+			m.setStatus(firstLine(msg.err.Error()), true)
+		}
 		for dir, names := range msg.services {
 			m.services[dir] = names
 		}
@@ -650,19 +690,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setStatus("config ok", false)
-		yes := "y"
-		if keys.Start.Enabled() {
-			// the up key applies too, it is what the question offers to run
-			yes += " or " + keys.Start.Help().Key
-		}
-		m.confirm = &confirm{
-			prompt: "Apply changes? (" + yes + " = up -d / n)",
-			onYes: func(m *Model) tea.Cmd {
-				return m.runAction(e, "up -d "+e.Rel, "docker compose up -d ("+e.Rel+")", "up", "-d")
-			},
-			yes: &keys.Start,
-		}
-		return m, loadServices([]discover.Env{e})
+		return m, tea.Batch(m.afterEdit(e), loadServices([]discover.Env{e}))
 
 	case updateMsg:
 		return m, m.onUpdate(msg)
@@ -967,6 +995,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.onSelect()
 
 	case key.Matches(msg, keys.UpdateAll):
+		if r, ok := m.list.selectedHeading(); ok && m.focus == focusEnvs {
+			cmd, _ := m.headingAction(msg, r) // only what is under the heading
+			return m, cmd
+		}
 		return m, m.startUpdateAll()
 
 	case key.Matches(msg, keys.CleanImages):
@@ -1026,6 +1058,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, loadServices(m.opts.Envs))
 	}
 
+	// on a heading, the actions run on every stack under it
+	if r, ok := m.list.selectedHeading(); ok && m.focus == focusEnvs {
+		if cmd, done := m.headingAction(msg, r); done {
+			return m, cmd
+		}
+		return m, nil
+	}
 	return m.handleAction(msg)
 }
 
@@ -1141,7 +1180,17 @@ func (m Model) envAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keys.Restart):
 		a := args(restartArgs...)
-		return m, m.runAction(e, "restarting "+name, "docker compose restart ("+name+")", a...)
+		target := name
+		asked := m.ask(&confirm{
+			title:  "Restart",
+			prompt: fmt.Sprintf("Restart %s? (y/n)", target),
+			onYes: func(m *Model) tea.Cmd {
+				return m.runAction(e, "restarting "+target, "docker compose restart ("+target+")", a...)
+			},
+			// r again restarts: a stray r does nothing, a meant one costs a key
+			yes: &keys.Restart,
+		})
+		return m, asked
 
 	case key.Matches(msg, keys.Pull):
 		a := args(pullArgs...)
@@ -1150,33 +1199,36 @@ func (m Model) envAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Stop) && svc != "":
 		a := args(downServiceArgs...)
 		target := name
-		m.confirm = &confirm{
+		asked := m.ask(&confirm{
+			title:  "Down",
 			prompt: fmt.Sprintf("Stop and remove the %s container? (y/n)", target),
 			onYes: func(m *Model) tea.Cmd {
 				return m.runAction(e, "down "+target, "docker compose rm --stop --force ("+target+")", a...)
 			},
-		}
-		return m, nil
+		})
+		return m, asked
 
 	case key.Matches(msg, keys.Stop):
-		m.confirm = &confirm{
+		asked := m.ask(&confirm{
+			title:  "Down",
 			prompt: fmt.Sprintf("Run docker compose down for %s? (y/n)", e.Rel),
 			onYes: func(m *Model) tea.Cmd {
 				return m.runAction(e, "down "+e.Rel, "docker compose down ("+e.Rel+")", downArgs...)
 			},
-		}
-		return m, nil
+		})
+		return m, asked
 
 	case key.Matches(msg, keys.Recreate):
 		a := args(recreateArgs...)
 		target := name
-		m.confirm = &confirm{
+		asked := m.ask(&confirm{
+			title:  "Force recreate",
 			prompt: fmt.Sprintf("Force recreate %s? (y/n)", target),
 			onYes: func(m *Model) tea.Cmd {
 				return m.runAction(e, "recreating "+target, "docker compose up -d --force-recreate ("+target+")", a...)
 			},
-		}
-		return m, nil
+		})
+		return m, asked
 
 	case key.Matches(msg, keys.Logs):
 		if m.paneMode == modeCompose {
@@ -1551,7 +1603,7 @@ func (m Model) View() string {
 		main = logs
 	}
 
-	return m.withMenu(m.withPrompt(lipgloss.JoinVertical(lipgloss.Left, header, main, m.statusView(), footer)))
+	return m.withMenu(m.withPrompt(m.withConfirm(lipgloss.JoinVertical(lipgloss.Left, header, main, m.statusView(), footer))))
 }
 
 func (m Model) headerView() string {
@@ -1612,8 +1664,6 @@ func (m Model) statusView() string {
 	switch {
 	case m.searching:
 		s = m.searchInput.View()
-	case m.confirm != nil:
-		s = m.confirmView()
 	case m.busy > 0:
 		s = m.spin.View() + " " + textStyle.Render(m.status)
 	case m.statusErr:
@@ -1703,6 +1753,9 @@ func (m Model) hostNames() string {
 // cleanup removes the temporary files before quitting.
 func (m *Model) cleanup() {
 	m.endEdit()
+	if m.asker != nil {
+		m.asker.Close()
+	}
 	for _, f := range m.leftovers {
 		_ = os.RemoveAll(f)
 	}
@@ -1810,7 +1863,6 @@ func (m *Model) toggleHeading(open *bool) tea.Cmd {
 func (m *Model) setHeading(key string, open *bool) tea.Cmd {
 	m.list.setOpen(key, *open)
 	m.list.selectKey(key)
-	m.list.fixCursor() // an open heading is passed over: on to what is in it
 	remoteRoot := remote.IsRemote(key) && !strings.Contains(key, "\x00")
 	if h := m.opts.History; h != nil && !remoteRoot {
 		h.Closed = slices.DeleteFunc(h.Closed, func(k string) bool { return k == key })
@@ -1820,6 +1872,38 @@ func (m *Model) setHeading(key string, open *bool) tea.Cmd {
 		if err := h.Save(); err != nil {
 			m.setStatus("saving history: "+err.Error(), true)
 		}
+	}
+	return nil
+}
+
+// ask asks c in a box, or answers yes right away when confirm is off in
+// the config.
+func (m *Model) ask(c *confirm) tea.Cmd {
+	if m.opts.NoConfirm {
+		return c.onYes(m)
+	}
+	m.confirm = c
+	return nil
+}
+
+// afterEdit applies a valid edit of e as the config says: ask first, apply
+// with up -d, or leave it.
+func (m *Model) afterEdit(e discover.Env) tea.Cmd {
+	apply := func(m *Model) tea.Cmd {
+		return m.runAction(e, "up -d "+e.Rel, "docker compose up -d ("+e.Rel+")", "up", "-d")
+	}
+	switch m.opts.AfterEdit {
+	case AfterEditApply:
+		return apply(m)
+	case AfterEditCheck:
+		m.setStatus("config ok; "+keys.Start.Help().Key+" applies it", false)
+		return nil
+	}
+	m.confirm = &confirm{
+		title:  "Apply changes",
+		prompt: "docker compose config is ok for " + e.Rel + ". Run docker compose up -d to apply the changes?",
+		onYes:  apply,
+		yes:    &keys.Start, // the up key applies too, it is what the question offers
 	}
 	return nil
 }

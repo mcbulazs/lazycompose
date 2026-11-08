@@ -31,8 +31,13 @@ type (
 		// errs are the hosts that could not be read, by hostKey
 		errs map[string]error
 	}
-	servicesMsg struct{ services map[string][]string }
-	psMsg       struct {
+	servicesMsg struct {
+		services map[string][]string
+		// err is a host refusing sessions; other errors, like a broken
+		// compose file, show when the environment is selected
+		err error
+	}
+	psMsg struct {
 		dir        string
 		containers []compose.Container
 		err        error
@@ -134,6 +139,7 @@ func loadServices(envs []discover.Env) tea.Cmd {
 		defer cancel()
 
 		res := map[string][]string{}
+		var refused error
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, 8)
@@ -145,6 +151,11 @@ func loadServices(envs []discover.Env) tea.Cmd {
 				defer func() { <-sem }()
 				names, err := project(e).Services(ctx)
 				if err != nil {
+					if errors.Is(err, remote.ErrSessionRefused) {
+						mu.Lock()
+						refused = err
+						mu.Unlock()
+					}
 					return
 				}
 				mu.Lock()
@@ -153,7 +164,7 @@ func loadServices(envs []discover.Env) tea.Cmd {
 			}(e)
 		}
 		wg.Wait()
-		return servicesMsg{services: res}
+		return servicesMsg{services: res, err: refused}
 	}
 }
 

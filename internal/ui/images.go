@@ -74,7 +74,8 @@ func (m *Model) onOldImages(msg oldImagesMsg) tea.Cmd {
 		m.appendLog(fmt.Sprintf("  %-30s %8s  %-14s %s", repo, formatSize(img.Size),
 			ago(time.Since(img.Created)), dimStyle.Render(shortID(img.ID))))
 	}
-	m.confirm = &confirm{
+	return m.ask(&confirm{
+		title:  "Remove old images",
 		prompt: fmt.Sprintf("Remove %d old images (up to %s)? (y/n)", len(ids), formatSize(total)),
 		onYes: func(m *Model) tea.Cmd {
 			label := fmt.Sprintf("docker image rm (%d old images)", len(ids))
@@ -82,8 +83,7 @@ func (m *Model) onOldImages(msg oldImagesMsg) tea.Cmd {
 				return startDocker(id, append([]string{"image", "rm"}, ids...)...)
 			})
 		},
-	}
-	return nil
+	})
 }
 
 func shortID(id string) string {

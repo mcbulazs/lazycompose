@@ -13,11 +13,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/term"
 	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 	"github.com/mcbulazs/lazycompose/internal/history"
@@ -33,6 +31,8 @@ type config struct {
 	MaxDepth int                          `yaml:"max_depth"`
 	Editor   *string                      `yaml:"editor"`
 	Mouse    *bool                        `yaml:"mouse"`
+	Confirm  *bool                        `yaml:"confirm"`
+	After    string                       `yaml:"after_edit"`
 	Quick    *bool                        `yaml:"quick_access"`
 	Version  *bool                        `yaml:"version_check"`
 	Updates  *string                      `yaml:"update_check"`
@@ -127,6 +127,15 @@ editor: vim
 # Scroll and click with the mouse. While it is on, hold shift to select
 # text in most terminals.
 mouse: true
+
+# Ask before actions that stop or change containers: down, restart, force
+# recreate, update all, removing old images, moving, and actions on a
+# folder. false runs them right away.
+confirm: true
+
+# After an edit is saved and checked: ask whether to apply it with up -d
+# (ask), apply it right away (apply), or only check it (check).
+after_edit: ask
 
 # Show up to 5 environments you use most, by how often and how recently, at
 # the top of the list. Running an action on an environment counts as a use.
@@ -248,8 +257,9 @@ func keyOverrides(keys map[string]keyList) map[string][]string {
 }
 
 func loadConfig(path string) (config, error) {
-	editor, mouse, quick, updates, versions := defaultEditor(), true, true, "6h", true
-	cfg := config{Roots: []string{"~"}, Editor: &editor, Mouse: &mouse, Quick: &quick, Updates: &updates, Version: &versions, Filename: stackfs.ComposeName, Theme: ui.DefaultTheme}
+	editor, mouse, quick, updates, versions, confirm := defaultEditor(), true, true, "6h", true, true
+	cfg := config{Roots: []string{"~"}, Editor: &editor, Mouse: &mouse, Confirm: &confirm, After: ui.AfterEditAsk,
+		Quick: &quick, Updates: &updates, Version: &versions, Filename: stackfs.ComposeName, Theme: ui.DefaultTheme}
 	if path == "" {
 		return cfg, nil
 	}
@@ -282,6 +292,16 @@ func loadConfig(path string) (config, error) {
 	}
 	if file.Mouse != nil {
 		cfg.Mouse = file.Mouse
+	}
+	if file.Confirm != nil {
+		cfg.Confirm = file.Confirm
+	}
+	switch file.After {
+	case "":
+	case ui.AfterEditAsk, ui.AfterEditApply, ui.AfterEditCheck:
+		cfg.After = file.After
+	default:
+		return cfg, fmt.Errorf("%s: after_edit: %q is not ask, apply or check", path, file.After)
 	}
 	if file.Quick != nil {
 		cfg.Quick = file.Quick
@@ -392,6 +412,11 @@ func selfUpdate() error {
 }
 
 func main() {
+	// started by ssh to ask a login question: hand it to the lazycompose
+	// that started ssh, and do nothing else
+	if code, ok := remote.RunAskpass(os.Args); ok {
+		os.Exit(code)
+	}
 	var roots rootsFlag
 	configPath := flag.String("config", defaultConfigPath(), "config file")
 	depth := flag.Int("max-depth", -1, "how deep to look for compose files, 0 for no limit (overrides config)")
@@ -482,7 +507,6 @@ func main() {
 	}
 
 	ui.RemoveLeftovers()
-	loginRemotes(cfg.Roots)
 	every, _ := updateEvery(*cfg.Updates) // checked when loading the config
 	var latestVersion func(context.Context) (string, error)
 	if *cfg.Version {
@@ -497,6 +521,8 @@ func main() {
 		Editor:      *cfg.Editor,
 		CdFile:      *cdFile,
 		Mouse:       *cfg.Mouse,
+		NoConfirm:   !*cfg.Confirm,
+		AfterEdit:   cfg.After,
 		QuickAccess: *cfg.Quick,
 		History:     history.Load(history.DefaultPath()),
 		UpdateEvery: every,
@@ -525,56 +551,6 @@ func main() {
 		if err := os.WriteFile(*cdFile, []byte(fm.QuitDir()), 0o600); err != nil {
 			fmt.Fprintln(os.Stderr, "lazycompose:", err)
 			os.Exit(1)
-		}
-	}
-}
-
-// loginRemotes logs in to the host of a single remote root before the
-// screen opens: ssh asks in the terminal for a key's passphrase, or whether
-// to trust a new host key, and keeps the connection open for lazycompose.
-// With several roots a remote one starts closed, and its host is logged in
-// to when it is opened. A host that cannot be reached is left to the
-// screen.
-func loginRemotes(roots []string) {
-	if len(roots) != 1 {
-		return
-	}
-	var hosts []*remote.Host
-	seen := map[string]bool{}
-	for _, r := range roots {
-		if h, _, err := remote.Parse(r); err == nil && !seen[h.String()] {
-			seen[h.String()] = true
-			hosts = append(hosts, h)
-		}
-	}
-	if len(hosts) == 0 || !term.IsTerminal(os.Stdin.Fd()) {
-		return
-	}
-	need := make([]bool, len(hosts))
-	var wg sync.WaitGroup
-	for i, h := range hosts {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			need[i], _ = h.NeedsLogin(ctx)
-		}()
-	}
-	wg.Wait()
-	for i, h := range hosts {
-		if !need[i] {
-			continue
-		}
-		if !remote.CanLogin() {
-			fmt.Fprintf(os.Stderr, "lazycompose: %s needs a key passphrase or a password; add the key to ssh-agent with ssh-add first\n", h.Label())
-			continue
-		}
-		fmt.Fprintf(os.Stderr, "lazycompose: logging in to %s\n", h.Label())
-		cmd := h.LoginCommand()
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "lazycompose: could not log in to %s, its stacks show the error\n", h.Label())
 		}
 	}
 }

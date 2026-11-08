@@ -1,12 +1,17 @@
 package ui
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"os/exec"
 	"path"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 	"github.com/mcbulazs/lazycompose/internal/remote"
@@ -14,9 +19,10 @@ import (
 
 // Remote hosts are connected on demand. With several roots, a remote root
 // starts closed and lazycompose does not touch its host until the root is
-// opened: then it logs in, which may hand the terminal to ssh to ask for a
-// key's passphrase, scans the root and follows the host like this one.
-// A single remote root is connected from the start, before the screen.
+// opened: then it logs in, scans the root and follows the host like this
+// one. A single remote root is connected right at the start. When ssh has
+// to ask something to log in, like a key's passphrase, the question comes
+// through remote.Asker and is asked in a popup.
 
 type (
 	hostCheckedMsg struct {
@@ -28,6 +34,8 @@ type (
 		key string
 		err error
 	}
+	connectMsg  struct{ host *remote.Host }
+	questionMsg struct{ q remote.Question }
 )
 
 // startHosts are the hosts followed from the start: this machine when a
@@ -43,7 +51,7 @@ func startHosts(roots []string, envs []discover.Env) []*remote.Host {
 		}
 	}
 	for _, h := range all {
-		if h == nil || len(roots) == 1 || known[h.String()] {
+		if h == nil || known[h.String()] {
 			out = append(out, h)
 		}
 	}
@@ -119,20 +127,112 @@ func (m *Model) onHostChecked(msg hostCheckedMsg) tea.Cmd {
 		m.setStatus(h.Label()+" needs a key passphrase or a password; add the key to ssh-agent with ssh-add", true)
 		return nil
 	case msg.need:
-		// ssh asks in the terminal, then keeps the connection open
-		return tea.ExecProcess(h.LoginCommand(), func(err error) tea.Msg { return hostLoginMsg{key: msg.key, err: err} })
+		if m.asker == nil {
+			a, err := remote.NewAsker()
+			if err != nil {
+				m.connecting[msg.key] = false
+				m.setStatus("logging in to "+h.Label()+": "+err.Error(), true)
+				return nil
+			}
+			m.asker = a
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cmd, err := h.AskingLoginCommand(ctx, m.asker)
+		if err != nil {
+			cancel()
+			m.connecting[msg.key] = false
+			m.setStatus("logging in to "+h.Label()+": "+err.Error(), true)
+			return nil
+		}
+		m.logins[msg.key] = cancel
+		return tea.Batch(m.startBusy("logging in to "+h.Label()), m.waitQuestion(), runLogin(msg.key, h, cmd))
 	}
 	return m.onConnected(h)
 }
 
+// runLogin runs the login ssh, which opens the shared connection.
+func runLogin(key string, h *remote.Host, cmd *exec.Cmd) tea.Cmd {
+	return func() tea.Msg {
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err != nil && stderr.Len() > 0 {
+			err = remote.Explain(h, errors.New(stderr.String()))
+		}
+		return hostLoginMsg{key: key, err: err}
+	}
+}
+
+// waitQuestion waits for the next question of a login, unless something
+// already does.
+func (m *Model) waitQuestion() tea.Cmd {
+	if m.asker == nil || m.askWaiting {
+		return nil
+	}
+	m.askWaiting = true
+	a := m.asker
+	return func() tea.Msg { return questionMsg{q: <-a.Questions} }
+}
+
+// onQuestion asks ssh's question in a popup. A passphrase or password is
+// typed hidden and passed on exactly as typed.
+func (m *Model) onQuestion(msg questionMsg) tea.Cmd {
+	m.askWaiting = false
+	q := msg.q
+	var hosts []string
+	for k, on := range m.connecting {
+		if h := m.hostOf(k); on && h != nil {
+			hosts = append(hosts, h.Label())
+		}
+	}
+	sort.Strings(hosts)
+	title := "ssh login"
+	if len(hosts) > 0 {
+		title += " · " + strings.Join(hosts, ", ")
+	}
+	if m.prompt != nil && m.prompt.cancel != nil {
+		m.prompt.cancel(m) // only one popup: an earlier question gives way
+	}
+	cmd := m.openPrompt(title, q.Prompt, "", func(m *Model, value string) (tea.Cmd, error) {
+		q.Answer(value)
+		return m.waitQuestion(), nil
+	})
+	m.prompt.cancel = func(m *Model) tea.Cmd {
+		q.Cancel()
+		// esc means no login: otherwise ssh goes on to ask for a password
+		for k, cancel := range m.logins {
+			cancel()
+			delete(m.logins, k)
+		}
+		return m.waitQuestion()
+	}
+	if q.Secret {
+		m.prompt.raw = true
+		m.prompt.input.EchoMode = textinput.EchoPassword
+		m.prompt.input.EchoCharacter = '•'
+	}
+	return cmd
+}
+
 func (m *Model) onHostLogin(msg hostLoginMsg) tea.Cmd {
+	m.busy = max(0, m.busy-1)
+	cancel, running := m.logins[msg.key]
+	if running {
+		cancel()
+		delete(m.logins, msg.key)
+	}
 	h := m.hostOf(msg.key)
 	if h == nil {
 		return nil
 	}
-	if msg.err != nil {
+	switch {
+	case msg.err != nil && !running:
 		m.connecting[msg.key] = false
-		m.setStatus("could not log in to "+h.Label(), true)
+		m.setStatus("login to "+h.Label()+" cancelled", false)
+		return nil
+	case msg.err != nil:
+		m.connecting[msg.key] = false
+		m.setStatus("could not log in: "+firstLine(msg.err.Error()), true)
 		return nil
 	}
 	return m.onConnected(h)

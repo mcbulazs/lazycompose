@@ -220,3 +220,20 @@ func TestCheckConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestAfterEditConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("after_edit: sometimes\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadConfig(path); err == nil || !strings.Contains(err.Error(), "after_edit") {
+		t.Errorf("a bad after_edit should be refused: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("after_edit: apply\nconfirm: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil || cfg.After != "apply" || *cfg.Confirm {
+		t.Errorf("cfg %+v, err %v", cfg, err)
+	}
+}

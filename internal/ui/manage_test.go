@@ -135,7 +135,7 @@ func TestMoveEnv(t *testing.T) {
 	m, root := diskModel(t)
 	blog := filepath.Join(root, "web/blog")
 	m.opts.History.Record(blog, time.Now())
-	m = send(m, press("j")...) // web/blog
+	m = send(m, press("j", "j")...) // past the web heading to web/blog
 	if selected(m) != "web/blog" {
 		t.Fatalf("selected %q", selected(m))
 	}

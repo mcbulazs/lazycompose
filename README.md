@@ -77,6 +77,7 @@ folder permanent; `c` opens it from inside lazycompose.
 | `P` | Remove old images left behind by pulls (asks first) |
 | `z` | Zoom the focused pane to full screen |
 | `v` | Show the compose file in the log pane, or the logs again |
+| `o` | Open the log pane in your editor, to search or copy from it |
 | `n` / `m` | New environment / move or rename it |
 | `f` | Pin to the top of the list |
 | `e` / `E` | Edit the compose file / `.env` |

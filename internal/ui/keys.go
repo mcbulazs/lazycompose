@@ -12,16 +12,17 @@ import (
 // capital is the stronger version (r restart, R force recreate).
 
 type keyMap struct {
-	MoveUp, MoveDown, NextPane, PrevPane     key.Binding
-	FocusEnvs, FocusServices, FocusLogs      key.Binding
-	Filter, Problems                         key.Binding
-	Edit, EditEnv, EditConfig                key.Binding
-	NewEnv, MoveEnv, Pin                     key.Binding
-	Start, Stop, Restart, Recreate, Toggle   key.Binding
-	Pull, UpdateAll                          key.Binding
-	Logs, Shell, Folder, Refresh, Help, Quit key.Binding
-	QuitToFolder, Commands                   key.Binding
-	CleanImages, Zoom, ComposeView           key.Binding
+	MoveUp, MoveDown, NextPane, PrevPane   key.Binding
+	FocusEnvs, FocusServices, FocusLogs    key.Binding
+	Filter, Problems                       key.Binding
+	Edit, EditEnv, EditConfig              key.Binding
+	NewEnv, MoveEnv, Pin                   key.Binding
+	Start, Stop, Restart, Recreate, Toggle key.Binding
+	Pull, UpdateAll                        key.Binding
+	Logs, OpenLogs, Shell, Folder, Refresh key.Binding
+	Help, Quit                             key.Binding
+	QuitToFolder, Commands                 key.Binding
+	CleanImages, Zoom, ComposeView         key.Binding
 }
 
 // action is a key binding as it is named in the config file.
@@ -57,6 +58,7 @@ var actions = []action{
 	{"update_all", []string{"U"}, "update all", func(k *keyMap) *key.Binding { return &k.UpdateAll }},
 	{"clean_images", []string{"P"}, "remove old images", func(k *keyMap) *key.Binding { return &k.CleanImages }},
 	{"logs", []string{"l"}, "fetch logs", func(k *keyMap) *key.Binding { return &k.Logs }},
+	{"open_logs", []string{"o"}, "logs in editor", func(k *keyMap) *key.Binding { return &k.OpenLogs }},
 	{"shell", []string{"x"}, "shell", func(k *keyMap) *key.Binding { return &k.Shell }},
 	{"folder_shell", []string{"X"}, "shell in folder", func(k *keyMap) *key.Binding { return &k.Folder }},
 	{"zoom", []string{"z"}, "zoom pane", func(k *keyMap) *key.Binding { return &k.Zoom }},

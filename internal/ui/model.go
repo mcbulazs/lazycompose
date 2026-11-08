@@ -390,7 +390,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handedOver reports messages sent when the editor or a shell has exited.
 func handedOver(msg tea.Msg) bool {
 	switch msg.(type) {
-	case editorMsg, configEditedMsg, shellMsg, folderShellMsg:
+	case editorMsg, configEditedMsg, logsEditedMsg, shellMsg, folderShellMsg:
 		return true
 	}
 	return false
@@ -645,6 +645,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, openFolderShell(msg.env)
 		}
 		m.setStatus("opened a tmux window in "+msg.env.Rel, false)
+		return m, nil
+
+	case logsEditedMsg:
+		if msg.err != nil {
+			m.setStatus("editor: "+msg.err.Error(), true)
+		}
 		return m, nil
 
 	case folderShellMsg:
@@ -952,6 +958,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, openConfigEditor(m.opts.Editor, m.opts.ConfigPath)
+
+	case key.Matches(msg, keys.OpenLogs):
+		if _, _, why := m.logsCommand(""); why != "" {
+			m.setStatus(why, true)
+			return m, nil
+		}
+		return m, openLogsEditor(m.opts.Editor, m.logLines)
 
 	case key.Matches(msg, keys.Refresh):
 		m.composeTarget = logTarget{} // read the compose file again

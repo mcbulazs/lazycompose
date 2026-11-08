@@ -62,6 +62,7 @@ var menuInfos = map[string]menuInfo{
 	"zoom":               {"Make the focused pane full screen, or back", "fullscreen maximize enlarge", false},
 	"compose_view":       {"Show the compose file in the log pane, or the logs again", "view preview yaml file config", false},
 	"logs":               {"Fetch the logs again", "output follow", false},
+	"open_logs":          {"Open the log pane's text in your editor, to search or copy it", "copy select clipboard export save view pager", false},
 	"shell":              {"Open a shell in the selected service", "exec bash sh terminal container", false},
 	"folder_shell":       {"Open your shell in the environment's folder", "terminal cd tmux", false},
 	"refresh":            {"Refresh and rescan folders", "reload scan", false},
@@ -180,8 +181,11 @@ func recentRank(recent []string, name string) int {
 // commandFor returns the command an action runs on the current selection,
 // short and in full, or why it cannot run.
 func (m Model) commandFor(name, why string) (short, full, reason string) {
-	if name == "edit_config" {
+	switch name {
+	case "edit_config":
 		return m.configCommand(why)
+	case "open_logs":
+		return m.logsCommand(why)
 	}
 	e, svc, ok := m.target()
 	needsEnv := !slices.Contains([]string{"filter", "problems", "new_env", "update_all", "clean_images", "zoom", "compose_view", "refresh", "quit", "commands", "help"}, name) && !menuInfos[name].nav
@@ -579,6 +583,23 @@ func (m Model) withMenu(view string) string {
 	}
 	x, y, _, _ := m.menuBox()
 	return overlay(view, m.menuView(), x, y)
+}
+
+// logsCommand is the editor command for the log pane's text, which is
+// written to a temporary file first.
+func (m Model) logsCommand(why string) (short, full, reason string) {
+	if len(m.logLines) == 0 {
+		if why == "" {
+			why = "the log pane is empty"
+		}
+		return "", "", why
+	}
+	cmd, err := editorCommand(m.opts.Editor, logsFilePattern)
+	if err != nil {
+		return "", "", err.Error()
+	}
+	full = shellJoin(cmd.Args)
+	return full, full, why
 }
 
 // configCommand is the editor command for the config file, shown with the

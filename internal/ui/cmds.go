@@ -17,6 +17,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 )
@@ -47,7 +48,8 @@ type (
 		changed bool
 		err     error
 	}
-	validateMsg struct {
+	logsEditedMsg struct{ err error }
+	validateMsg   struct {
 		env discover.Env
 		err error
 	}
@@ -181,6 +183,54 @@ func openConfigEditor(editor, file string) tea.Cmd {
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return configEditedMsg{changed: hashFile(file) != before, err: err}
 	})
+}
+
+// logsFilePattern names the temporary file the log pane is written to.
+const logsFilePattern = "lazycompose-logs-*.log"
+
+// openLogsEditor writes the log pane's lines, without colours, to a
+// temporary file only the user can read and opens it in the editor, where
+// the text can be searched and copied. The file is removed when the editor
+// exits.
+func openLogsEditor(editor string, lines []string) tea.Cmd {
+	name, err := writeLogsFile(lines)
+	var cmd *exec.Cmd
+	if err == nil {
+		cmd, err = editorCommand(editor, name)
+		if err != nil {
+			_ = os.Remove(name)
+		}
+	}
+	if err != nil {
+		return func() tea.Msg { return logsEditedMsg{err: err} }
+	}
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		_ = os.Remove(name)
+		return logsEditedMsg{err: err}
+	})
+}
+
+// writeLogsFile writes lines without their colours to a new temporary file
+// and returns its name.
+func writeLogsFile(lines []string) (string, error) {
+	f, err := os.CreateTemp("", logsFilePattern)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	for _, l := range lines {
+		b.WriteString(ansi.Strip(l))
+		b.WriteByte('\n')
+	}
+	_, err = f.WriteString(b.String())
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 // envFile is the file docker compose reads variables from by default.

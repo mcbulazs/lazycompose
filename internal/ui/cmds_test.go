@@ -1,11 +1,16 @@
 package ui
 
 import (
+	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 )
 
@@ -103,5 +108,63 @@ func TestUserShell(t *testing.T) {
 		t.Error("userShell() is empty, want PowerShell or %ComSpec%")
 	case runtime.GOOS != "windows" && got != "sh":
 		t.Errorf("userShell() = %q, want sh", got)
+	}
+}
+
+// tempDir points os.TempDir at a test folder, on every system.
+func tempDir(t *testing.T) string {
+	dir := t.TempDir()
+	for _, v := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(v, dir)
+	}
+	return dir
+}
+
+func TestWriteLogsFile(t *testing.T) {
+	dir := tempDir(t)
+	name, err := writeLogsFile([]string{"\x1b[31merror\x1b[0m: boom", "plain\tline"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(name) != dir || !strings.HasSuffix(name, ".log") {
+		t.Errorf("file %q, want a .log in %q", name, dir)
+	}
+	b, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "error: boom\nplain\tline\n"; string(b) != want {
+		t.Errorf("file holds %q, want %q", b, want)
+	}
+	if fi, err := os.Stat(name); err != nil {
+		t.Fatal(err)
+	} else if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		t.Errorf("file mode %v, want 0600: logs can hold secrets", fi.Mode().Perm())
+	}
+}
+
+func TestOpenLogs(t *testing.T) {
+	tempDir(t)
+	m := New(Options{Hostname: "host", Roots: []string{"/srv"}, Editor: "nano"})
+	m = send(m, tea.WindowSizeMsg{Width: 160, Height: 30})
+	m = send(m, press("o")...)
+	if m.status != "the log pane is empty" || !m.statusErr {
+		t.Errorf("o with no logs: status %q (error %v)", m.status, m.statusErr)
+	}
+
+	m.logLines = []string{"hello"}
+	m.setStatus("", false)
+	next, cmd := m.Update(press("o")[0])
+	if cmd == nil || next.(Model).status != "" {
+		t.Errorf("o with logs should open the editor, status %q", next.(Model).status)
+	}
+	m = send(m, press(":", "copy")...)
+	if names := shownNames(m); len(names) == 0 || names[0] != "open_logs" {
+		t.Errorf("searching copy should find open_logs first, got %v", names)
+	}
+
+	m = send(New(Options{}), logsEditedMsg{err: errors.New("no editor found")})
+	if !strings.Contains(m.status, "editor: no editor found") {
+		t.Errorf("status %q", m.status)
 	}
 }

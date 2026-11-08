@@ -192,7 +192,7 @@ theme: terminal
 #   edit: e                   edit_env: E             edit_config: c
 #   new_env: n                move_env: m             pin: f
 #   up: u                    down: d                 stop_start: s
-#   restart: r                recreate: R
+#   restart: r                recreate: R             open_logs: o
 #   pull: p                   update_all: U           clean_images: P
 #   logs: l                   shell: x                folder_shell: X
 #   zoom: z                   compose_view: v         refresh: ctrl+r

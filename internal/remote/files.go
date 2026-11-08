@@ -49,7 +49,9 @@ func (h *Host) WriteFile(ctx context.Context, p string, data []byte, mode string
 		if err := h.run(ctx, nil, "touch", "--", p); err != nil {
 			return err
 		}
-		if err := h.run(ctx, nil, "chmod", mode, "--", p); err != nil {
+		// "--" before the mode: macOS' chmod takes the first operand as
+		// the mode, so a "--" after it would be read as a file
+		if err := h.run(ctx, nil, "chmod", "--", mode, p); err != nil {
 			return err
 		}
 	}

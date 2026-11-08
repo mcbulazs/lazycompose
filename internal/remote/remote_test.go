@@ -105,7 +105,7 @@ func TestSSHArgs(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		return
 	}
-	ControlDir = t.TempDir()
+	ControlDir = shortDir(t)
 	defer func() { ControlDir = "" }()
 	got = (&Host{Name: "server"}).SSHArgs("true")
 	if !slices.Contains(got, "ControlMaster=auto") || !slices.Contains(got, "ControlPath="+ControlDir+"/%C") {

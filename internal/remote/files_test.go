@@ -113,7 +113,7 @@ func TestLoginArgs(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no shared connections on Windows")
 	}
-	ControlDir = t.TempDir()
+	ControlDir = shortDir(t)
 	defer func() { ControlDir = "" }()
 	h := &Host{Name: "server"}
 	login := h.LoginCommand().Args[1:]
@@ -169,4 +169,17 @@ func TestExplainRefusedSession(t *testing.T) {
 	if !strings.Contains(err.Error(), "MaxSessions") || !errors.Is(err, ErrSessionRefused) {
 		t.Errorf("a refused session should name MaxSessions, got %q", err)
 	}
+}
+
+// shortDir is a folder with a short path for connection sockets: the test
+// temp folder on macOS, under /var/folders, is too long to share
+// connections, which lazycompose rightly turns off.
+func shortDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "lc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }

@@ -12,10 +12,11 @@ stop, restart, pull, edit and tail logs without leaving the terminal.
 - Live status from `docker events`, with unhealthy and crashed stacks in red
 - Services with state, health, CPU, memory, ports, image and uptime
 - Logs that follow the selection, with search, or the compose file instead
-- Edit the compose or `.env` file, validated before it is applied
+- Edit the compose or `.env` file in any editor; every save is validated and offered to apply
 - Update all running stacks with one key, and a `↑` on services with a newer image
 - Quick access to the stacks you use most, and pins for the ones you always want
 - Create, move and rename stacks from the app
+- Stacks on other machines over ssh, next to the local ones
 - Themes, configurable keys, mouse support
 
 ## Install

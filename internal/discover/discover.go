@@ -3,9 +3,12 @@ package discover
 import (
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/mcbulazs/lazycompose/internal/remote"
 )
 
 // ComposeFiles are checked in the same order docker compose uses.
@@ -20,12 +23,42 @@ var ComposeFiles = []string{
 type Env struct {
 	Root string // scan root it was found under
 	Rel  string // path relative to Root, e.g. "web/blog"
-	Dir  string // absolute folder
-	File string // absolute path to the compose file
+	// Dir is the absolute folder. For a remote environment it is
+	// ssh://host/path, which only names it; Path is the folder there.
+	Dir  string
+	File string // absolute path to the compose file, on Host
+	// Host is the machine a remote environment is on; nil is this one.
+	Host *remote.Host
+	Path string // the folder on Host, for a remote environment
+}
+
+// Remote reports whether the environment is on another machine.
+func (e Env) Remote() bool { return e.Host != nil }
+
+// Folder is the environment's folder on the machine it is on.
+func (e Env) Folder() string {
+	if e.Host != nil {
+		return e.Path
+	}
+	return e.Dir
 }
 
 // Name is the folder name of the environment.
-func (e Env) Name() string { return filepath.Base(e.Dir) }
+func (e Env) Name() string {
+	if e.Host != nil {
+		return path.Base(e.Path)
+	}
+	return filepath.Base(e.Dir)
+}
+
+// RootName is a short name for the root, for headings: its folder name,
+// with the host in front for a remote root.
+func (e Env) RootName() string {
+	if e.Host != nil {
+		return e.Host.Label() + ":" + path.Base(strings.TrimPrefix(e.Root, e.Host.String()))
+	}
+	return filepath.Base(e.Root)
+}
 
 // Group is the parent folder relative to the root, or "" for top level.
 func (e Env) Group() string {
@@ -113,13 +146,17 @@ func Find(roots []string, maxDepth int) ([]Env, error) {
 		}
 	}
 
+	sortEnvs(envs)
+	return envs, nil
+}
+
+func sortEnvs(envs []Env) {
 	sort.SliceStable(envs, func(i, j int) bool {
 		if envs[i].Root != envs[j].Root {
 			return envs[i].Root < envs[j].Root
 		}
 		return envs[i].Rel < envs[j].Rel
 	})
-	return envs, nil
 }
 
 func composeFile(dir string) string {

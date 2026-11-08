@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/mcbulazs/lazycompose/internal/discover"
+	"github.com/mcbulazs/lazycompose/internal/remote"
 )
 
 // ComposeName is the default file name for new environments.
@@ -29,13 +31,19 @@ const Starter = `services:
 
 // Target is a checked folder for a new or moved environment.
 type Target struct {
-	Root string // scan root it is under
-	Dir  string // absolute, cleaned folder
+	Root string // scan root it is under; for a remote one ssh://host/folder
+	Dir  string // absolute, cleaned folder, on Host
 	Rel  string // Dir relative to Root, with forward slashes
+	// Host is the machine of a remote target; nil is this one
+	Host *remote.Host
 }
 
 // Env is the environment the target becomes once it has a compose file.
 func (t Target) Env(file string) discover.Env {
+	if t.Host != nil {
+		return discover.Env{Root: t.Root, Rel: t.Rel, Dir: t.Host.Key(t.Dir),
+			File: path.Join(t.Dir, file), Host: t.Host, Path: t.Dir}
+	}
 	return discover.Env{Root: t.Root, Rel: t.Rel, Dir: t.Dir, File: filepath.Join(t.Dir, file)}
 }
 
@@ -275,14 +283,20 @@ var (
 // the project name if it comes from the folder name, and paths in the
 // compose file that point outside the folder.
 func Warnings(composeFile, from string, t Target) []string {
-	var out []string
 	b, _ := os.ReadFile(composeFile)
-	if filepath.Base(from) != filepath.Base(t.Dir) && !nameLine.Match(b) {
+	return ComposeWarnings(b, filepath.Base(from), filepath.Base(t.Dir), filepath.Dir(from) == filepath.Dir(t.Dir))
+}
+
+// ComposeWarnings is Warnings for a compose file b, moving from a folder
+// named fromName to one named toName, in the same parent folder or not.
+func ComposeWarnings(b []byte, fromName, toName string, sameParent bool) []string {
+	var out []string
+	if fromName != toName && !nameLine.Match(b) {
 		out = append(out, fmt.Sprintf(
 			"the project name changes from %q to %q, so named volumes and networks do not carry over (set name: in the compose file to keep them)",
-			projectName(filepath.Base(from)), projectName(filepath.Base(t.Dir))))
+			projectName(fromName), projectName(toName)))
 	}
-	if filepath.Dir(from) != filepath.Dir(t.Dir) {
+	if !sameParent {
 		seen := map[string]bool{}
 		var paths []string
 		for _, m := range outsidePath.FindAllSubmatch(b, -1) {

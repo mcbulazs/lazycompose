@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -82,7 +83,8 @@ func TestComposeView(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "shop", "compose.yaml"), []byte("services: {changed: {}}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m = send(m, editorMsg{env: m.opts.Envs[1], file: filepath.Join(root, "shop", "compose.yaml")})
+	m.edit = &editWatch{id: 7, env: m.opts.Envs[1], file: filepath.Join(root, "shop", "compose.yaml")}
+	m = send(m, editorMsg{id: 7, took: time.Minute})
 	if !strings.Contains(shown(m), "changed") {
 		t.Errorf("after editing the file should be read again:\n%s", shown(m))
 	}

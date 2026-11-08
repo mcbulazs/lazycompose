@@ -1,10 +1,13 @@
 package compose
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mcbulazs/lazycompose/internal/remote"
 )
 
 func fixture(t *testing.T, name string) []byte {
@@ -96,7 +99,7 @@ func TestParsePSInvalid(t *testing.T) {
 }
 
 func TestParseDockerPS(t *testing.T) {
-	m, err := ParseDockerPS(fixture(t, "docker_ps.txt"))
+	m, err := ParseDockerPS(fixture(t, "docker_ps.txt"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +148,7 @@ func TestShort(t *testing.T) {
 }
 
 func TestParseDockerPSProblems(t *testing.T) {
-	m, err := ParseDockerPS(fixture(t, "docker_ps.txt"))
+	m, err := ParseDockerPS(fixture(t, "docker_ps.txt"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,5 +253,41 @@ func TestParseOldImages(t *testing.T) {
 	}
 	if got[1].Repo != "nginx" || got[1].Size != 44000000 || got[1].Created.Day() != 20 {
 		t.Errorf("parsed %+v", got[1])
+	}
+}
+
+func TestParseDockerPSRemote(t *testing.T) {
+	local, err := ParseDockerPS(fixture(t, "docker_ps.txt"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &remote.Host{Name: "server"}
+	got, err := ParseDockerPS(fixture(t, "docker_ps.txt"), h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(local) {
+		t.Fatalf("%d dirs, want %d", len(got), len(local))
+	}
+	for dir, st := range local {
+		key := "ssh://server" + filepath.ToSlash(dir)
+		if r := got[key]; r == nil || r.Running != st.Running || r.Total != st.Total {
+			t.Errorf("%s: %+v, want %+v as %s", dir, r, st, key)
+		}
+	}
+	// remote paths keep their slashes, whatever this system uses
+	if k := DirKey(h, "/srv//web/"); k != "ssh://server/srv/web" {
+		t.Errorf("DirKey = %q", k)
+	}
+}
+
+func TestProjectCommandRemote(t *testing.T) {
+	p := Project{Dir: "/srv/my web", File: "/srv/my web/compose.yaml", Host: &remote.Host{Name: "server"}}
+	args := p.Command(context.Background(), "ps", "-a").Args
+	if args[0] != "ssh" || args[len(args)-1] != "docker compose -f '/srv/my web/compose.yaml' ps -a" {
+		t.Errorf("args %q", args)
+	}
+	if cmd := p.Command(context.Background(), "ps"); cmd.Dir != "" {
+		t.Errorf("a remote command should not run in a local folder, got %q", cmd.Dir)
 	}
 }

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/registry"
+	"github.com/mcbulazs/lazycompose/internal/remote"
 )
 
 // Services whose image tag points to a newer image in the registry than the
@@ -71,7 +73,7 @@ func (m *Model) startUpdateCheck() tea.Cmd {
 	for k, v := range m.upd.remote {
 		cache[k] = v
 	}
-	return checkUpdates(registry.New(), cache, m.opts.UpdateEvery)
+	return checkUpdates(registry.New(), m.hosts, cache, m.opts.UpdateEvery)
 }
 
 func (m Model) handleUpdates(msg tea.Msg) (Model, tea.Cmd) {
@@ -124,15 +126,27 @@ type digester interface {
 	Digest(ctx context.Context, ref registry.Ref) (string, error)
 }
 
-// checkUpdates reads the local images and asks the registry about the refs
-// that are not in cache or are older than every.
-func checkUpdates(reg digester, cache map[string]remoteDigest, every time.Duration) tea.Cmd {
+// checkUpdates reads the images on the hosts and asks the registry about
+// the refs that are not in cache or are older than every. A host that
+// cannot be read is left out; it fails only when none can.
+func checkUpdates(reg digester, hosts []*remote.Host, cache map[string]remoteDigest, every time.Duration) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		images, err := compose.ServiceImages(ctx)
-		if err != nil {
-			return updatesCheckedMsg{err: err}
+		var images []compose.ServiceImage
+		var firstErr error
+		read := 0
+		for _, h := range hosts {
+			imgs, err := compose.ServiceImages(ctx, h)
+			if err != nil {
+				firstErr = cmp.Or(firstErr, err)
+				continue
+			}
+			read++
+			images = append(images, imgs...)
+		}
+		if read == 0 && firstErr != nil {
+			return updatesCheckedMsg{err: firstErr}
 		}
 		return updatesCheckedMsg{images: images, remote: askRegistries(ctx, reg, images, cache, every)}
 	}

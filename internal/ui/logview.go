@@ -64,7 +64,7 @@ func (m *Model) scheduleLogs() tea.Cmd {
 	want := logTarget{dir: e.Dir, service: svc}
 	if m.paneMode == modeCompose {
 		if want != m.composeTarget {
-			m.showCompose(e, svc)
+			return m.showCompose(e, svc)
 		}
 		return nil
 	}

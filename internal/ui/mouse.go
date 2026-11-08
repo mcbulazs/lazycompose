@@ -81,9 +81,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			if m.list.query != "" {
 				first++
 			}
-			lines := m.list.lines()
-			if i := row - first + m.list.offset; row >= first && i < len(lines) && lines[i].pos >= 0 {
-				m.list.cursor = lines[i].pos
+			if i := row - first + m.list.offset; row >= first && i < len(m.list.rows) && m.list.clickable(i) {
+				m.list.cursor = i
+				if _, ok := m.list.selectedHeading(); ok {
+					// a click opens or closes a heading
+					return m, tea.Batch(m.toggleHeading(nil), m.onSelect())
+				}
 				return m, m.onSelect()
 			}
 		case focusServices:

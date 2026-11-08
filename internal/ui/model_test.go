@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,6 +48,14 @@ func press(keys ...string) []tea.Msg {
 			out = append(out, tea.KeyMsg{Type: tea.KeyTab})
 		case "down":
 			out = append(out, tea.KeyMsg{Type: tea.KeyDown})
+		case "up":
+			out = append(out, tea.KeyMsg{Type: tea.KeyUp})
+		case "left":
+			out = append(out, tea.KeyMsg{Type: tea.KeyLeft})
+		case "right":
+			out = append(out, tea.KeyMsg{Type: tea.KeyRight})
+		case "space":
+			out = append(out, tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
 		case "esc":
 			out = append(out, tea.KeyMsg{Type: tea.KeyEsc})
 		case "enter":
@@ -67,8 +76,10 @@ func selected(m Model) string {
 
 func visible(m Model) []string {
 	var out []string
-	for _, idx := range m.list.visible {
-		out = append(out, m.list.items[idx].env.Rel)
+	for _, r := range m.list.rows {
+		if r.kind == rowEnv {
+			out = append(out, m.list.items[r.item].env.Rel)
+		}
 	}
 	return out
 }
@@ -90,9 +101,9 @@ func TestListOrder(t *testing.T) {
 		t.Fatalf("order %v, want %v", got, want)
 	}
 	var headers []string
-	for _, l := range m.list.lines() {
-		if l.pos == -1 {
-			headers = append(headers, l.header)
+	for _, r := range m.list.rows {
+		if r.kind == rowGroup {
+			headers = append(headers, r.label)
 		}
 	}
 	if strings.Join(headers, ",") != "games,web" {
@@ -270,7 +281,7 @@ func TestUpdateAllNothingRunning(t *testing.T) {
 }
 
 func TestScanningState(t *testing.T) {
-	m := New(Options{Roots: []string{"/srv"}, Find: func() ([]discover.Env, error) { return nil, nil }})
+	m := New(Options{Roots: []string{"/srv"}, Find: func([]string) ([]discover.Env, error) { return nil, nil }})
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 24})
 	if !strings.Contains(m.View(), "scanning…") {
 		t.Errorf("should show scanning before the first result")
@@ -351,9 +362,9 @@ func TestMouse(t *testing.T) {
 	if selected(m) != "games/mc" {
 		t.Errorf("click selected %q, want games/mc", selected(m))
 	}
-	m = send(m, click(5, 3)) // a group header does nothing
+	m = send(m, click(5, 3), click(5, 3)) // a group header closes, then opens again
 	if selected(m) != "games/mc" {
-		t.Errorf("clicking a header changed the selection to %q", selected(m))
+		t.Errorf("closing and opening a header should land on games/mc, got %q", selected(m))
 	}
 
 	m = send(m, tea.MouseMsg{X: 5, Y: 6, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
@@ -387,18 +398,24 @@ func TestEditorResult(t *testing.T) {
 	if err := os.WriteFile(file, []byte("A=1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	before := hashFile(file)
-
-	m = send(m, editorMsg{env: env("plex"), file: file, before: before})
-	if m.status != "no changes" || m.busy != 0 {
-		t.Errorf("unchanged file: status %q, busy %d", m.status, m.busy)
+	edit := func(m Model) Model {
+		m.editID++
+		m.edit = &editWatch{id: m.editID, env: env("plex"), file: file, hash: hashFile(file)}
+		return m
 	}
 
+	// a terminal editor quits: the edit is over
+	m = edit(m)
+	m = send(m, editorMsg{id: m.editID, took: time.Minute})
+	if m.status != "no changes" || m.busy != 0 || m.edit != nil {
+		t.Errorf("unchanged file: status %q, busy %d, edit %v", m.status, m.busy, m.edit)
+	}
+	m = edit(m)
 	if err := os.WriteFile(file, []byte("A=2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	m = send(m, editorMsg{env: env("plex"), file: file, before: before})
-	if m.busy != 1 || !strings.Contains(m.status, "validating plex") {
+	m = send(m, editorMsg{id: m.editID, took: time.Minute})
+	if m.busy != 1 || !strings.Contains(m.status, "validating plex") || m.edit != nil {
 		t.Errorf("changed file should be validated: status %q, busy %d", m.status, m.busy)
 	}
 
@@ -406,6 +423,55 @@ func TestEditorResult(t *testing.T) {
 	m = send(m, validateMsg{env: env("plex")})
 	if m.confirm == nil || m.confirm.prompt != "Apply changes? (y or u = up -d / n)" {
 		t.Errorf("expected apply prompt, got %+v", m.confirm)
+	}
+}
+
+func TestEditorWindow(t *testing.T) {
+	m := newTestModel(t)
+	file := filepath.Join(t.TempDir(), "compose.yaml")
+	if err := os.WriteFile(file, []byte("services: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.editID = 3
+	m.edit = &editWatch{id: 3, env: env("plex"), file: file, hash: hashFile(file)}
+
+	// code returns at once and keeps the file in its window
+	next, cmd := m.Update(editorMsg{id: 3, took: 100 * time.Millisecond})
+	m = next.(Model)
+	if m.edit == nil || !m.edit.watching || cmd == nil || !strings.Contains(m.status, "every save") {
+		t.Fatalf("a quick editor should start watching: edit %+v, status %q", m.edit, m.status)
+	}
+	m = send(m, editTickMsg{id: 3})
+	if m.busy != 0 {
+		t.Errorf("no save, nothing to do: busy %d", m.busy)
+	}
+
+	// each save is validated and offered to apply
+	for i := range 2 {
+		if err := os.WriteFile(file, []byte(fmt.Sprintf("services: {a%d: {}}\n", i)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		m = send(m, editTickMsg{id: 3})
+		if m.busy != 1 || !strings.Contains(m.status, "validating plex") {
+			t.Fatalf("save %d: status %q, busy %d", i, m.status, m.busy)
+		}
+		m = send(m, validateMsg{env: env("plex")})
+		if m.confirm == nil {
+			t.Fatalf("save %d should ask to apply", i)
+		}
+		m.confirm = nil
+	}
+	if m.edit == nil {
+		t.Fatal("saving should not end the edit")
+	}
+
+	// a new edit replaces the watch; ticks of the old one do nothing
+	m.editID, m.edit = 4, &editWatch{id: 4, env: env("plex"), file: file, hash: hashFile(file)}
+	if err := os.WriteFile(file, []byte("services: {b: {}}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, cmd := m.Update(editTickMsg{id: 3}); cmd != nil {
+		t.Error("a tick of an ended edit should do nothing")
 	}
 }
 
@@ -779,7 +845,7 @@ func TestQuickAccessAfterScan(t *testing.T) {
 	h := history.Load("")
 	h.Record("/srv/web/shop", time.Now())
 	m := New(Options{Hostname: "host", Roots: []string{"/srv"}, QuickAccess: true, History: h,
-		Find: func() ([]discover.Env, error) { return testEnvs(), nil }})
+		Find: func([]string) ([]discover.Env, error) { return testEnvs(), nil }})
 	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 30}, envsMsg{envs: testEnvs()})
 	if it, _ := m.list.selectedItem(); !it.quick || it.env.Rel != "web/shop" {
 		t.Errorf("after the first scan the cursor should be on quick access web/shop, got %+v", it)

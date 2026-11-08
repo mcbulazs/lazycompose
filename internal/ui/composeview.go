@@ -1,16 +1,22 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mcbulazs/lazycompose/internal/discover"
+	"github.com/mcbulazs/lazycompose/internal/remote"
 )
 
 // The log pane shows either the logs of the selection or its compose file,
@@ -38,34 +44,63 @@ const maxComposeFile = 1 << 20
 // overrideFiles are merged on top of the compose file by docker compose.
 var overrideFiles = []string{"compose.override.yaml", "compose.override.yml", "docker-compose.override.yaml", "docker-compose.override.yml"}
 
+// composeFile is a file shown in the compose view: the compose file, or
+// the override file merged on top of it.
+type composeFile struct {
+	name string // the override's file name; "" for the compose file
+	data []byte
+	cut  bool // over maxComposeFile, only the start is in data
+	err  error
+}
+
+// composeReadMsg brings the compose file of a remote environment.
+type composeReadMsg struct {
+	target logTarget
+	files  []composeFile
+}
+
 // showCompose puts the compose file of e in the log pane, scrolled to the
-// section of svc if one is given.
-func (m *Model) showCompose(e discover.Env, svc string) {
+// section of svc if one is given. A remote file is read in the background,
+// by the command it returns.
+func (m *Model) showCompose(e discover.Env, svc string) tea.Cmd {
 	m.stopLogs()
 	m.search = logSearch{}
 	m.outputKeys = nil
 	m.composeTarget = logTarget{dir: e.Dir, service: svc}
-	m.logTitle = "Compose · " + e.Rel + "/" + filepath.Base(e.File)
+	m.logTitle = "Compose · " + e.Rel + "/" + path.Base(filepath.ToSlash(e.File))
+	if e.Remote() {
+		m.logLines = nil
+		m.logs.SetContent(dimStyle.Render("reading the compose file…"))
+		target := m.composeTarget
+		return func() tea.Msg { return composeReadMsg{target: target, files: readRemoteCompose(e)} }
+	}
+	m.renderCompose(svc, readLocalCompose(e))
+	return nil
+}
 
-	lines, err := composeLines(e.File)
-	if err != nil {
-		m.logLines = []string{redStyle.Render(err.Error())}
+func (m *Model) onComposeRead(msg composeReadMsg) {
+	if m.paneMode != modeCompose || msg.target != m.composeTarget {
+		return // the selection moved on
+	}
+	m.renderCompose(msg.target.service, msg.files)
+}
+
+func (m *Model) renderCompose(svc string, files []composeFile) {
+	main := files[0]
+	if main.err != nil {
+		m.logLines = []string{redStyle.Render(main.err.Error())}
 		m.renderLogs()
 		m.logs.GotoTop()
 		return
 	}
-	for _, name := range overrideFiles {
-		path := filepath.Join(e.Dir, name)
-		if _, err := os.Stat(path); err != nil {
-			continue
+	lines := composeText(main.data, main.cut)
+	for _, f := range files[1:] {
+		lines = append(lines, "", dimStyle.Render("── "+f.name+", applied on top ──"))
+		if f.err != nil {
+			lines = append(lines, redStyle.Render(f.err.Error()))
+		} else {
+			lines = append(lines, composeText(f.data, f.cut)...)
 		}
-		more, err := composeLines(path)
-		lines = append(lines, "", dimStyle.Render("── "+name+", applied on top ──"))
-		if err != nil {
-			lines = append(lines, redStyle.Render(err.Error()))
-		}
-		lines = append(lines, more...)
-		break
 	}
 	m.logLines = lines
 	m.renderLogs()
@@ -77,21 +112,78 @@ func (m *Model) showCompose(e discover.Env, svc string) {
 	}
 }
 
-// composeLines reads a compose file and colours it, with line numbers.
-func composeLines(path string) ([]string, error) {
-	f, err := os.Open(path)
+// readLocalCompose reads the compose file and the first override file
+// there is.
+func readLocalCompose(e discover.Env) []composeFile {
+	data, cut, err := readLimited(e.File)
+	files := []composeFile{{data: data, cut: cut, err: err}}
+	for _, name := range overrideFiles {
+		p := filepath.Join(e.Dir, name)
+		if _, err := os.Stat(p); err != nil {
+			continue
+		}
+		data, cut, err := readLimited(p)
+		return append(files, composeFile{name: name, data: data, cut: cut, err: err})
+	}
+	return files
+}
+
+// readRemoteCompose is readLocalCompose over ssh, with no more than the
+// limit coming over.
+func readRemoteCompose(e discover.Env) []composeFile {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	read := func(p string) (composeFile, bool) {
+		data, exists, err := e.Host.ReadFile(ctx, p, maxComposeFile)
+		if errors.Is(err, remote.ErrTooBig) {
+			return composeFile{data: data, cut: true}, true // the start, as for a local file
+		}
+		return composeFile{data: data, err: err}, exists || err != nil
+	}
+	main, ok := read(e.File)
+	if !ok {
+		main.err = errors.New(e.File + ": no such file")
+	}
+	files := []composeFile{main}
+	if main.err != nil {
+		return files
+	}
+	for _, name := range overrideFiles {
+		if f, ok := read(path.Join(e.Path, name)); ok {
+			f.name = name
+			return append(files, f)
+		}
+	}
+	return files
+}
+
+func readLimited(p string) ([]byte, bool, error) {
+	f, err := os.Open(p)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer func() { _ = f.Close() }()
 	b, err := io.ReadAll(io.LimitReader(f, maxComposeFile+1))
 	if err != nil {
+		return nil, false, err
+	}
+	if len(b) > maxComposeFile {
+		return b[:maxComposeFile], true, nil
+	}
+	return b, false, nil
+}
+
+// composeLines reads a compose file and colours it, with line numbers.
+func composeLines(p string) ([]string, error) {
+	b, cut, err := readLimited(p)
+	if err != nil {
 		return nil, err
 	}
-	cut := len(b) > maxComposeFile
-	if cut {
-		b = b[:maxComposeFile]
-	}
+	return composeText(b, cut), nil
+}
+
+// composeText colours a compose file, with line numbers.
+func composeText(b []byte, cut bool) []string {
 	raw := strings.Split(strings.TrimRight(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n"), "\n")
 	width := len(fmt.Sprint(len(raw)))
 	out := make([]string, len(raw), len(raw)+1)
@@ -104,7 +196,7 @@ func composeLines(path string) ([]string, error) {
 	if cut {
 		out = append(out, dimStyle.Render("… the rest of the file is not shown, it is over 1MB"))
 	}
-	return out, nil
+	return out
 }
 
 // stripControls removes control characters, keeping tabs.

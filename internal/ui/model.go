@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"fmt"
+	"maps"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -19,6 +21,7 @@ import (
 	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 	"github.com/mcbulazs/lazycompose/internal/history"
+	"github.com/mcbulazs/lazycompose/internal/remote"
 )
 
 const maxLogLines = 5000
@@ -35,9 +38,10 @@ type Options struct {
 	Hostname string
 	Roots    []string
 	Envs     []discover.Env
-	Find     func() ([]discover.Env, error)
-	Theme    Theme
-	Editor   string
+	// Find scans the given roots
+	Find   func(roots []string) ([]discover.Env, error)
+	Theme  Theme
+	Editor string
 	// CdFile receives the selected folder when quitting with quit_to_folder
 	CdFile string
 	// Mouse is set when the program runs with mouse support
@@ -139,9 +143,18 @@ type Model struct {
 	stats         map[string]compose.Stats // by container name, for the selected env
 	loadingStats  bool
 
-	events         *eventStream
-	eventsStarting bool
-	eventsTried    time.Time
+	// hosts are the machines with roots: nil for this one, if it has
+	// roots, and each remote host
+	hosts          []*remote.Host
+	hostErrs       map[string]string // the last error of each host, by hostKey
+	connecting     map[string]bool   // hosts being connected, by hostKey
+	afterScan      envItem           // what to select once a scan of a new host is in
+	edit           *editWatch        // the file being edited, if any
+	leftovers      []string          // temporary files and folders to remove when quitting
+	editID         int
+	events         map[string]*eventStream
+	eventsStarting map[string]bool
+	eventsTried    map[string]time.Time
 
 	upd updateState
 
@@ -176,7 +189,7 @@ func New(opts Options) Model {
 
 	m := Model{
 		opts:        opts,
-		list:        newEnvList(opts.Envs, len(opts.Roots) > 1),
+		list:        newEnvList(opts.Envs, opts.Roots),
 		filter:      fi,
 		searchInput: si,
 		states:      map[string]*compose.DirState{},
@@ -186,7 +199,7 @@ func New(opts Options) Model {
 		spin:        sp,
 	}
 	m.updateQuick()
-	m.list.cursor = 0 // start on the most used environment
+	m.list.selectFirst() // start on the most used environment
 	if opts.History != nil && opts.History.Pane == modeCompose.name() {
 		m.paneMode = modeCompose
 	}
@@ -194,7 +207,13 @@ func New(opts Options) Model {
 		m.current = e.Dir
 		m.loadingPS = true
 	}
-	m.eventsStarting = true // Init starts the event stream
+	m.hosts = startHosts(opts.Roots, opts.Envs)
+	m.connecting = map[string]bool{}
+	m.closeAtStart()
+	m.hostErrs = map[string]string{}
+	m.events = map[string]*eventStream{}
+	m.eventsStarting = map[string]bool{}
+	m.eventsTried = map[string]time.Time{}
 	if opts.Envs == nil && opts.Find != nil {
 		m.scanning = true
 		m.busy = 1
@@ -207,9 +226,9 @@ func New(opts Options) Model {
 
 func (m Model) Init() tea.Cmd {
 	if m.scanning {
-		return tea.Batch(m.spin.Tick, rediscover(m.opts.Find), loadStates(), tick(pollEvery), startEvents(), m.firstUpdateCheck(), m.firstVersionCheck())
+		return tea.Batch(m.spin.Tick, rediscover(m.opts.Find, m.activeRoots()), loadStates(m.hosts), tick(pollEvery), m.startAllEvents(true), m.firstUpdateCheck(), m.firstVersionCheck())
 	}
-	cmds := []tea.Cmd{loadStates(), loadServices(m.opts.Envs), tick(pollEvery), startEvents(), m.firstUpdateCheck(), m.firstVersionCheck()}
+	cmds := []tea.Cmd{loadStates(m.hosts), loadServices(m.opts.Envs), tick(pollEvery), m.startAllEvents(true), m.firstUpdateCheck(), m.firstVersionCheck()}
 	if c := m.selectCurrent(); c != nil {
 		cmds = append(cmds, c)
 	}
@@ -230,6 +249,9 @@ func (m Model) selectCurrent() tea.Cmd {
 
 func (m *Model) onSelect() tea.Cmd {
 	e, ok := m.selectedEnv()
+	if it, _ := m.list.selectedItem(); it.offline {
+		m.setStatus(it.env.Host.Label()+" is not connected yet; enter connects", false)
+	}
 	if !ok {
 		m.current = ""
 		m.containers = nil
@@ -390,7 +412,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handedOver reports messages sent when the editor or a shell has exited.
 func handedOver(msg tea.Msg) bool {
 	switch msg.(type) {
-	case editorMsg, configEditedMsg, logsEditedMsg, shellMsg, folderShellMsg:
+	case editorMsg, configEditedMsg, logsEditedMsg, shellMsg, folderShellMsg, hostLoginMsg:
 		return true
 	}
 	return false
@@ -408,6 +430,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case oldImagesMsg:
 		return m, m.onOldImages(msg)
+
+	case composeReadMsg:
+		m.onComposeRead(msg)
+		return m, nil
 
 	case versionTickMsg:
 		return m, m.checkVersion()
@@ -435,50 +461,55 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case moveDoneMsg:
 		return m, m.moveDone(msg)
 
+	case hostCheckedMsg:
+		return m, m.onHostChecked(msg)
+
+	case hostLoginMsg:
+		return m, m.onHostLogin(msg)
+
+	case remoteCreatedMsg:
+		return m, m.onRemoteCreated(msg)
+
+	case remoteMoveCheckedMsg:
+		return m, m.onRemoteMoveChecked(msg)
+
 	case updateTickMsg, updatesCheckedMsg:
 		return m.handleUpdates(msg)
 
 	case tickMsg:
 		every := pollEvery
-		if m.events != nil {
+		if m.allEvents() {
 			every = pollEveryEvents
 		}
-		cmds := []tea.Cmd{tick(every), m.refreshIfIdle()}
-		if m.events == nil && !m.eventsStarting && time.Since(m.eventsTried) > retryEvents {
-			m.eventsStarting = true
-			cmds = append(cmds, startEvents())
-		}
-		return m, tea.Batch(cmds...)
+		return m, tea.Batch(tick(every), m.refreshIfIdle(), m.startAllEvents(false))
 
 	case eventsStartedMsg:
-		m.eventsStarting = false
-		m.eventsTried = time.Now()
+		m.eventsStarting[msg.host] = false
+		m.eventsTried[msg.host] = time.Now()
 		if msg.err != nil {
 			return m, nil
 		}
-		m.events = msg.stream
+		m.events[msg.host] = msg.stream
 		return m, msg.stream.next()
 
 	case dockerEventMsg:
-		if msg.stream != m.events {
+		if msg.stream != m.events[msg.stream.host] {
 			return m, nil
 		}
 		return m, tea.Batch(m.refreshIfIdle(), msg.stream.next())
 
 	case eventsEndMsg:
-		if msg.stream == m.events {
-			m.events = nil
-			m.eventsTried = time.Now()
+		if msg.stream == m.events[msg.stream.host] {
+			delete(m.events, msg.stream.host)
+			m.eventsTried[msg.stream.host] = time.Now()
 		}
 		return m, nil
 
 	case statesMsg:
 		m.loadingStates = false
-		if msg.err != nil {
-			m.setStatus("docker: "+firstLine(msg.err.Error()), true)
+		if m.onStates(msg) {
 			return m, nil
 		}
-		m.states = msg.states
 		// a log stream ends when its containers stop; pick it up again
 		// once they run
 		if m.stream == nil && !m.holdOutput && m.logTarget.dir != "" {
@@ -535,26 +566,31 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case envsMsg:
 		m.busy = max(0, m.busy-1)
 		m.scanning = false
-		if msg.err != nil {
-			m.setStatus("discover: "+msg.err.Error(), true)
+		if msg.err != nil && len(msg.envs) == 0 {
+			m.setStatus("discover: "+firstLine(msg.err.Error()), true)
 			return m, nil
 		}
-		m.opts.Envs = msg.envs
-		q := m.list.query
-		prev := m.list
-		m.list = newEnvList(msg.envs, len(m.opts.Roots) > 1)
+		first := len(m.opts.Envs) == 0
+		envs := mergeEnvs(m.opts.Envs, msg.envs, msg.roots)
+		m.opts.Envs = envs
+		m.list.setEnvs(envs)
 		m.updateQuick()
-		if it, ok := prev.selectedItem(); ok {
-			m.list.selectItem(it)
-		} else {
-			m.list.cursor = 0 // first scan: start on the most used environment
+		if first {
+			m.list.selectFirst() // start on the most used environment
 		}
-		m.list.setFilter(q)
+		if m.afterScan.env.Dir != "" {
+			m.list.selectItem(m.afterScan)
+			m.afterScan = envItem{}
+		}
 		if m.problemsOnly {
 			m.applyProblemFilter()
 		}
-		m.setStatus(fmt.Sprintf("found %d environments", len(msg.envs)), false)
-		return m, tea.Batch(loadServices(msg.envs), loadStates(), m.onSelect())
+		if msg.err != nil {
+			m.setStatus("discover: "+firstLine(msg.err.Error()), true)
+		} else {
+			m.setStatus(fmt.Sprintf("found %d environments", len(envs)), false)
+		}
+		return m, tea.Batch(loadServices(msg.envs), loadStates(m.hosts), m.onSelect())
 
 	case autoLogsMsg:
 		if msg.id != m.autoID {
@@ -570,21 +606,23 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case editorMsg:
-		m.composeTarget = logTarget{} // show the file as it is now
-		if msg.err != nil {
-			m.setStatus("editor: "+msg.err.Error(), true)
-			return m, nil
-		}
-		if hashFile(msg.file) == msg.before {
-			m.setStatus("no changes", false)
-			return m, nil
-		}
-		return m, tea.Batch(m.startBusy("validating "+msg.env.Rel), validate(msg.env))
+		return m, m.onEditor(msg)
+
+	case editTickMsg:
+		return m, m.onEditTick(msg)
+
+	case editReadyMsg:
+		return m, m.onEditReady(msg)
+
+	case uploadedMsg:
+		return m, m.onUploaded(msg)
 
 	case configEditedMsg:
 		switch {
 		case msg.err != nil:
 			m.setStatus("editor: "+msg.err.Error(), true)
+		case !msg.changed && msg.quick:
+			m.setStatus("config opened in the editor; restart lazycompose after saving it", false)
 		case !msg.changed:
 			m.setStatus("no changes", false)
 		default:
@@ -648,6 +686,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case logsEditedMsg:
+		if msg.file != "" {
+			m.leftovers = append(m.leftovers, msg.file)
+		}
 		if msg.err != nil {
 			m.setStatus("editor: "+msg.err.Error(), true)
 		}
@@ -700,7 +741,7 @@ func (m *Model) refreshIfIdle() tea.Cmd {
 	var cmds []tea.Cmd
 	if !m.loadingStates {
 		m.loadingStates = true
-		cmds = append(cmds, loadStates())
+		cmds = append(cmds, loadStates(m.hosts))
 	}
 	if e, ok := m.selectedEnv(); ok && !m.loadingPS {
 		m.loadingPS = true
@@ -710,7 +751,7 @@ func (m *Model) refreshIfIdle() tea.Cmd {
 }
 
 func (m *Model) refreshNow() tea.Cmd {
-	cmds := []tea.Cmd{loadStates()}
+	cmds := []tea.Cmd{loadStates(m.hosts)}
 	m.loadingStates = true
 	if e, ok := m.selectedEnv(); ok {
 		m.loadingPS = true
@@ -722,7 +763,8 @@ func (m *Model) refreshNow() tea.Cmd {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		m.stopLogs()
-		m.events.stop()
+		m.stopEvents()
+		m.cleanup()
 		return m, tea.Quit
 	}
 
@@ -787,7 +829,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, keys.Quit):
 		m.stopLogs()
-		m.events.stop()
+		m.stopEvents()
+		m.cleanup()
 		return m, tea.Quit
 
 	case key.Matches(msg, keys.QuitToFolder):
@@ -800,9 +843,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setStatus("no environment selected", true)
 			return m, nil
 		}
+		if e.Remote() {
+			m.setStatus(notOnRemote(keys.QuitToFolder), true)
+			return m, nil
+		}
 		m.quitDir = e.Dir
 		m.stopLogs()
-		m.events.stop()
+		m.stopEvents()
+		m.cleanup()
 		return m, tea.Quit
 
 	// n is also the next match while searching the logs
@@ -837,6 +885,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.setTableStyles()
 		return m, nil
+
+	case m.focus == focusEnvs && slices.Contains([]string{"enter", " ", "right", "left"}, msg.String()):
+		return m, m.headingKey(msg.String())
 
 	case key.Matches(msg, keys.MoveUp, keys.MoveDown):
 		n := 1
@@ -970,7 +1021,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.composeTarget = logTarget{} // read the compose file again
 		cmd := m.refreshNow()
 		if m.opts.Find != nil {
-			return m, tea.Batch(cmd, m.startBusy("rescanning"), rediscover(m.opts.Find))
+			return m, tea.Batch(cmd, m.startBusy("rescanning"), rediscover(m.opts.Find, m.activeRoots()))
 		}
 		return m, tea.Batch(cmd, loadServices(m.opts.Envs))
 	}
@@ -999,15 +1050,31 @@ func (m *Model) updateQuick() {
 	if h == nil {
 		return
 	}
-	dirs := make([]string, len(m.opts.Envs))
-	for i, e := range m.opts.Envs {
-		dirs[i] = e.Dir
+	byDir := map[string]envItem{}
+	dirs := make([]string, 0, len(m.opts.Envs))
+	for _, e := range m.opts.Envs {
+		dirs = append(dirs, e.Dir)
+		byDir[e.Dir] = envItem{env: e}
+	}
+	// remote environments of hosts that are not connected, shown dim
+	known := append(slices.Collect(maps.Keys(h.Uses)), h.Pins...)
+	for d, it := range m.offlineQuick(known) {
+		if _, ok := byDir[d]; !ok {
+			byDir[d] = it
+			dirs = append(dirs, d)
+		}
 	}
 	group := quickGroup
 	if !m.opts.QuickAccess {
 		group = pinnedGroup
 	}
-	m.list.setQuick(h.Quick(dirs, quickSize, time.Now(), m.opts.QuickAccess), group, h.Pinned)
+	var items []envItem
+	for _, d := range h.Quick(dirs, quickSize, time.Now(), m.opts.QuickAccess) {
+		it := byDir[d]
+		it.pinned = h.Pinned(d)
+		items = append(items, it)
+	}
+	m.list.setQuick(items, group)
 }
 
 // togglePin pins or unpins the selected environment.
@@ -1026,14 +1093,12 @@ func (m *Model) togglePin() {
 		return
 	}
 	before, _ := m.list.selectedItem()
-	pos := m.list.cursor
+	pos := m.list.quickIndex()
 	m.updateQuick()
 	// unpinned in the section: stay there, on the next one, so several can
 	// be unpinned in a row
-	if now, _ := m.list.selectedItem(); before.quick && !now.quick {
-		if n := m.list.quickCount(); n > 0 {
-			m.list.cursor = min(pos, n-1)
-		}
+	if now, _ := m.list.selectedItem(); before.quick && !now.quick && m.list.quickCount() > 0 {
+		m.list.selectQuick(pos)
 	}
 	m.setStatus(status, false)
 }
@@ -1065,10 +1130,10 @@ func (m Model) envAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, keys.Edit):
-		return m, openEditor(m.opts.Editor, e, e.File)
+		return m, m.startEdit(e, e.File)
 
 	case key.Matches(msg, keys.EditEnv):
-		return m, openEditor(m.opts.Editor, e, envFile(e))
+		return m, m.startEdit(e, envFile(e))
 
 	case key.Matches(msg, keys.Start):
 		a := args(upArgs...)
@@ -1166,8 +1231,12 @@ func (m *Model) sampleStats() tea.Cmd {
 		m.stats = nil
 		return nil
 	}
+	e, ok := m.selectedEnv()
+	if !ok || e.Dir != m.current {
+		return nil
+	}
 	m.loadingStats = true
-	return loadStats(m.current, names)
+	return loadStats(e, names)
 }
 
 // QuitDir is the folder chosen with quit_to_folder, or "".
@@ -1425,7 +1494,7 @@ func (m Model) View() string {
 	if m.scanning && len(m.list.items) == 0 {
 		listBody += dimStyle.Render("scanning…")
 	} else {
-		listBody += m.list.view(lw-4, listH, m.focus == focusEnvs, m.counts, m.hasUpdate)
+		listBody += m.list.view(lw-4, listH, m.focus == focusEnvs, listView{counts: m.counts, hasUpdate: m.hasUpdate, offline: m.hostOffline})
 	}
 	left := pane(zoomNote(envTitle), listBody, lw, body, m.focus == focusEnvs)
 
@@ -1513,7 +1582,7 @@ func (m Model) headerView() string {
 		}
 		left += yellowStyle.Render(m.newVersion+" available, "+hint) + "  "
 	}
-	left += textStyle.Render(m.opts.Hostname) + "  "
+	left += textStyle.Render(m.hostNames()) + "  "
 	room := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 4
 	roots := strings.Join(m.opts.Roots, ", ")
 	if cut := lipgloss.Width(roots) - room; cut > 0 {
@@ -1561,4 +1630,185 @@ func paneKey(b key.Binding) string {
 		return ""
 	}
 	return "[" + b.Keys()[0] + "] "
+}
+
+// onStates takes in the container states of every host. A host that could
+// not be read keeps what was known about it, and its error is shown once,
+// until it changes. It reports true when this machine's docker failed,
+// which leaves everything as it was, as before there were remote hosts.
+func (m *Model) onStates(msg statesMsg) bool {
+	if err := msg.errs[""]; err != nil {
+		m.setStatus("docker: "+firstLine(err.Error()), true)
+		return true
+	}
+	errs := map[string]string{}
+	for k, err := range msg.errs {
+		errs[k] = firstLine(err.Error())
+		for dir, st := range m.states {
+			if remote.HostOf(dir) == k {
+				msg.states[dir] = st
+			}
+		}
+		if m.hostErrs[k] != errs[k] {
+			m.setStatus(errs[k], true)
+		}
+	}
+	for k := range m.hostErrs {
+		if _, still := errs[k]; !still {
+			m.setStatus(strings.TrimPrefix(k, remote.Prefix)+" is reachable again", false)
+		}
+	}
+	m.hostErrs = errs
+	m.states = msg.states
+	return false
+}
+
+// localOnly are the actions that do not work on remote environments yet.
+var localOnly = map[string]bool{"quit_to_folder": true}
+
+// notOnRemote says that the action of b cannot be used on a remote
+// environment yet.
+func notOnRemote(b key.Binding) string {
+	return b.Help().Desc + " does not work on remote roots yet"
+}
+
+// hostNames are the machines shown in the header: this one when it has
+// roots, then the remote hosts.
+func (m Model) hostNames() string {
+	names := make([]string, 0, len(m.hosts))
+	for _, h := range m.hosts {
+		if h == nil {
+			names = append(names, m.opts.Hostname)
+		} else {
+			names = append(names, h.Label())
+		}
+	}
+	if len(names) == 0 {
+		return m.opts.Hostname
+	}
+	return strings.Join(names, ", ")
+}
+
+// cleanup removes the temporary files before quitting.
+func (m *Model) cleanup() {
+	m.endEdit()
+	for _, f := range m.leftovers {
+		_ = os.RemoveAll(f)
+	}
+	m.leftovers = nil
+}
+
+// mergeEnvs replaces the environments of the scanned roots in envs with
+// found, and keeps those of other roots.
+func mergeEnvs(envs, found []discover.Env, roots []string) []discover.Env {
+	scanned := map[string]bool{}
+	for _, r := range roots {
+		scanned[rootKey(r)] = true
+	}
+	var out []discover.Env
+	for _, e := range envs {
+		if !scanned[e.Root] {
+			out = append(out, e)
+		}
+	}
+	return append(out, found...)
+}
+
+// closeAtStart closes the roots of hosts that are not connected, and the
+// headings the history says were closed.
+func (m *Model) closeAtStart() {
+	for _, r := range m.opts.Roots {
+		if h, _, err := remote.Parse(r); err == nil && !m.connected(h) {
+			m.list.closed[rootKey(r)] = true
+		}
+	}
+	if h := m.opts.History; h != nil {
+		for _, k := range h.Closed {
+			m.list.closed[k] = true
+		}
+	}
+	m.list.rebuild()
+	m.list.selectFirst()
+}
+
+// headingKey handles enter, space and the arrows in the list: they open
+// and close headings, and enter connects an offline host.
+func (m *Model) headingKey(k string) tea.Cmd {
+	if it, ok := m.list.selectedItem(); ok {
+		switch {
+		case it.offline && (k == "enter" || k == " "):
+			m.afterScan = it // selected again once the scan finds it
+			return m.connect(it.env.Host)
+		case k == "left":
+			// close the heading it is under, and stay on that heading
+			if hk, ok := m.list.headingOf(m.list.cursor); ok {
+				open := false
+				return tea.Batch(m.setHeading(hk, &open), m.onSelect())
+			}
+		}
+		return nil
+	}
+	if _, ok := m.list.selectedHeading(); !ok {
+		return nil
+	}
+	if k == "left" && m.list.closed[m.list.rows[m.list.cursor].key] {
+		// already closed: close the root it is in
+		if hk, ok := m.list.headingOf(m.list.cursor); ok {
+			f := false
+			return tea.Batch(m.setHeading(hk, &f), m.onSelect())
+		}
+		return nil
+	}
+	var open *bool
+	switch k {
+	case "right":
+		t := true
+		open = &t
+	case "left":
+		f := false
+		open = &f
+	}
+	return tea.Batch(m.toggleHeading(open), m.onSelect())
+}
+
+// toggleHeading opens or closes the selected heading, or sets it to open
+// when that is given. Opening the root of a host that is not connected
+// connects it.
+func (m *Model) toggleHeading(open *bool) tea.Cmd {
+	r, ok := m.list.selectedHeading()
+	if !ok {
+		return nil
+	}
+	if r.kind == rowRoot {
+		if h := m.list.roots[r.root].host; m.hostOffline(h) {
+			if open != nil && !*open {
+				return nil
+			}
+			return m.connect(h)
+		}
+	}
+	want := m.list.closed[r.key]
+	if open != nil {
+		want = *open
+	}
+	return m.setHeading(r.key, &want)
+}
+
+// setHeading opens or closes the heading key and remembers it, except for
+// remote roots, which always start closed.
+func (m *Model) setHeading(key string, open *bool) tea.Cmd {
+	m.list.setOpen(key, *open)
+	m.list.selectKey(key)
+	m.list.fixCursor() // an open heading is passed over: on to what is in it
+	remoteRoot := remote.IsRemote(key) && !strings.Contains(key, "\x00")
+	if h := m.opts.History; h != nil && !remoteRoot {
+		h.Closed = slices.DeleteFunc(h.Closed, func(k string) bool { return k == key })
+		if !*open {
+			h.Closed = append(h.Closed, key)
+		}
+		if err := h.Save(); err != nil {
+			m.setStatus("saving history: "+err.Error(), true)
+		}
+	}
+	return nil
 }

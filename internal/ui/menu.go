@@ -74,6 +74,8 @@ var menuInfos = map[string]menuInfo{
 
 // fixedEntries are keys that cannot be rebound, listed in the keys window.
 var fixedEntries = []menuEntry{
+	{keys: "← / →", desc: "In the list: close the group of the selection / open a closed one"},
+	{keys: "enter / space", desc: "In the list: open or close a group; connect a remote root"},
 	{keys: "/", desc: "In the log pane: search the logs"},
 	{keys: "n / N", desc: "While searching the logs: older / newer match"},
 	{keys: "g / G", desc: "In the log pane: jump to the top / bottom"},
@@ -188,6 +190,13 @@ func (m Model) commandFor(name, why string) (short, full, reason string) {
 		return m.logsCommand(why)
 	}
 	e, svc, ok := m.target()
+	if ok && e.Remote() && localOnly[name] && why == "" {
+		for _, a := range actions {
+			if a.name == name {
+				return "", "", notOnRemote(*a.get(&keys))
+			}
+		}
+	}
 	needsEnv := !slices.Contains([]string{"filter", "problems", "new_env", "update_all", "clean_images", "zoom", "compose_view", "refresh", "quit", "commands", "help"}, name) && !menuInfos[name].nav
 	if !ok {
 		if needsEnv && why == "" {
@@ -219,7 +228,12 @@ func (m Model) commandFor(name, why string) (short, full, reason string) {
 			return "", "", err.Error()
 		}
 		full := shellJoin(cmd.Args)
-		return shellJoin(append(cmd.Args[:len(cmd.Args)-1:len(cmd.Args)-1], filepath.Base(file))), full, why
+		short := shellJoin(append(cmd.Args[:len(cmd.Args)-1:len(cmd.Args)-1], filepath.Base(file)))
+		if e.Remote() {
+			via := " (a copy from " + e.Host.Label() + ", written back on each save)"
+			return short + via, full + via, why
+		}
+		return short, full, why
 	case "up":
 		return compose(upArgs...)
 	case "restart":
@@ -255,6 +269,13 @@ func (m Model) commandFor(name, why string) (short, full, reason string) {
 		short, full, why := compose("exec", s, "bash")
 		return short + " (or sh)", full + " (or sh)", why
 	case "folder_shell":
+		if e.Remote() {
+			full := shellJoin(append([]string{"ssh"}, e.Host.TerminalArgs(remoteFolderShell(e)...)...))
+			if os.Getenv("TMUX") != "" {
+				return "tmux new-window, shell on " + e.Host.Label(), shellJoin(tmuxRemoteWindow(e).Args), why
+			}
+			return "shell on " + e.Host.Label() + " (in the folder)", full, why
+		}
 		if os.Getenv("TMUX") != "" {
 			return "tmux new-window in the folder", shellJoin(tmuxNewWindow(e.Dir, e.Name()).Args), why
 		}

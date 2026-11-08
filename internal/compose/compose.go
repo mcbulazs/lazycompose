@@ -7,33 +7,61 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mcbulazs/lazycompose/internal/remote"
 )
 
 // Project runs docker compose for a single compose file.
 type Project struct {
 	Dir  string
 	File string
+	// Host is the machine the project is on; nil is this one. Dir and File
+	// are paths on that machine.
+	Host *remote.Host
 }
 
 // Command builds a docker compose command for the project. It is also used
 // for interactive commands handed to the terminal.
 func (p Project) Command(ctx context.Context, args ...string) *exec.Cmd {
 	full := append([]string{"compose", "-f", p.File}, args...)
-	cmd := exec.CommandContext(ctx, "docker", full...)
+	if p.Host != nil {
+		// compose takes the project folder from the file, so there is no
+		// need to cd there first
+		return Docker(ctx, p.Host, full...)
+	}
+	cmd := Docker(ctx, nil, full...)
 	cmd.Dir = p.Dir
 	return cmd
+}
+
+// Terminal is Command for a command the user works in, like a shell in a
+// container: over ssh it gets a terminal.
+func (p Project) Terminal(args ...string) *exec.Cmd {
+	if p.Host == nil {
+		return p.Command(context.Background(), args...)
+	}
+	return p.Host.TerminalCommand(append([]string{"docker", "compose", "-f", p.File}, args...)...)
+}
+
+// Docker runs docker on the host: here when it is nil, otherwise over ssh.
+func Docker(ctx context.Context, h *remote.Host, args ...string) *exec.Cmd {
+	if h == nil {
+		return exec.CommandContext(ctx, "docker", args...)
+	}
+	return h.Command(ctx, append([]string{"docker"}, args...)...)
 }
 
 // Run runs a command and returns its combined output.
 func (p Project) Run(ctx context.Context, args ...string) (string, error) {
 	out, err := p.Command(ctx, args...).CombinedOutput()
-	return string(out), wrap(err, out)
+	return string(out), wrapOn(p.Host, err, out)
 }
 
 // PS returns all containers of the project, including stopped ones.
@@ -43,7 +71,7 @@ func (p Project) PS(ctx context.Context) ([]Container, error) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, wrap(err, stderr.Bytes())
+		return nil, wrapOn(p.Host, err, stderr.Bytes())
 	}
 	return ParsePS(out)
 }
@@ -55,7 +83,7 @@ func (p Project) Services(ctx context.Context) ([]string, error) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, wrap(err, stderr.Bytes())
+		return nil, wrapOn(p.Host, err, stderr.Bytes())
 	}
 	var names []string
 	for _, l := range strings.Split(string(out), "\n") {
@@ -71,6 +99,18 @@ func (p Project) Services(ctx context.Context) ([]string, error) {
 func (p Project) Validate(ctx context.Context) error {
 	_, err := p.Run(ctx, "config", "-q")
 	return err
+}
+
+// wrapOn is wrap for a command on h, explaining ssh's own errors: ssh exits
+// with 255 when it could not run the command at all, and is killed when the
+// host does not answer in time.
+func wrapOn(h *remote.Host, err error, out []byte) error {
+	w := wrap(err, out)
+	var ee *exec.ExitError
+	if h != nil && w != nil && (errors.As(err, &ee) && (ee.ExitCode() == 255 || ee.ExitCode() == -1) || errors.Is(err, exec.ErrNotFound)) {
+		return remote.Explain(h, w)
+	}
+	return w
 }
 
 func wrap(err error, out []byte) error {
@@ -208,17 +248,24 @@ type DirState struct {
 }
 
 // StateByDir reads every compose-managed container on the host with a single
-// `docker ps` call and groups them by project working directory.
-func StateByDir(ctx context.Context) (map[string]*DirState, error) {
-	cmd := exec.CommandContext(ctx, "docker", "ps", "-a",
+// `docker ps` call and groups them by project working directory. The keys
+// of a remote host are like ssh://host/srv/web, see DirKey.
+func StateByDir(ctx context.Context, h *remote.Host) (map[string]*DirState, error) {
+	out, err := dockerOutput(ctx, h, "ps", "-a",
 		"--filter", "label=com.docker.compose.project", "--format", "json")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
 	if err != nil {
-		return nil, wrap(err, stderr.Bytes())
+		return nil, err
 	}
-	return ParseDockerPS(out)
+	return ParseDockerPS(out, h)
+}
+
+// DirKey is the key of a working directory on h: the cleaned path here, or
+// ssh://host/path for a remote host, whose paths always use slashes.
+func DirKey(h *remote.Host, dir string) string {
+	if h == nil {
+		return filepath.Clean(dir)
+	}
+	return h.Key(path.Clean(dir))
 }
 
 const (
@@ -227,8 +274,8 @@ const (
 	labelOneoff     = "com.docker.compose.oneoff"
 )
 
-// ParseDockerPS parses `docker ps --format json` output.
-func ParseDockerPS(data []byte) (map[string]*DirState, error) {
+// ParseDockerPS parses `docker ps --format json` output from h.
+func ParseDockerPS(data []byte, h *remote.Host) (map[string]*DirState, error) {
 	res := map[string]*DirState{}
 	dec := json.NewDecoder(bytes.NewReader(bytes.TrimSpace(data)))
 	for dec.More() {
@@ -246,7 +293,7 @@ func ParseDockerPS(data []byte) (map[string]*DirState, error) {
 		if dir == "" || strings.EqualFold(labels[labelOneoff], "true") {
 			continue
 		}
-		dir = filepath.Clean(dir)
+		dir = DirKey(h, dir)
 		st := res[dir]
 		if st == nil {
 			st = &DirState{Services: map[string]bool{}}
@@ -302,14 +349,10 @@ type Stats struct {
 
 // ContainerStats samples CPU and memory for the named containers. It takes
 // about two seconds since docker measures CPU over an interval.
-func ContainerStats(ctx context.Context, names []string) (map[string]Stats, error) {
-	args := append([]string{"stats", "--no-stream", "--format", "json"}, names...)
-	cmd := exec.CommandContext(ctx, "docker", args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+func ContainerStats(ctx context.Context, h *remote.Host, names []string) (map[string]Stats, error) {
+	out, err := dockerOutput(ctx, h, append([]string{"stats", "--no-stream", "--format", "json"}, names...)...)
 	if err != nil {
-		return nil, wrap(err, stderr.Bytes())
+		return nil, err
 	}
 	return ParseStats(out)
 }
@@ -341,11 +384,11 @@ type ServiceImage struct {
 	Digests      []string // registry digests of that image, like "sha256:..."
 }
 
-// ServiceImages lists the image of every compose-managed container, with
-// the registry digests the image was pulled with. Locally built images have
-// no digests.
-func ServiceImages(ctx context.Context) ([]ServiceImage, error) {
-	ids, err := dockerOutput(ctx, "ps", "-aq", "--filter", "label=com.docker.compose.project")
+// ServiceImages lists the image of every compose-managed container on h,
+// with the registry digests the image was pulled with. Locally built images
+// have no digests. Dir is keyed like StateByDir.
+func ServiceImages(ctx context.Context, h *remote.Host) ([]ServiceImage, error) {
+	ids, err := dockerOutput(ctx, h, "ps", "-aq", "--filter", "label=com.docker.compose.project")
 	if err != nil {
 		return nil, err
 	}
@@ -355,17 +398,20 @@ func ServiceImages(ctx context.Context) ([]ServiceImage, error) {
 	}
 	format := `{{.Image}}{{"\t"}}{{.Config.Image}}{{"\t"}}{{index .Config.Labels "` + labelWorkingDir +
 		`"}}{{"\t"}}{{index .Config.Labels "` + labelService + `"}}`
-	out, err := dockerOutput(ctx, append([]string{"inspect", "--format", format}, containers...)...)
+	out, err := dockerOutput(ctx, h, append([]string{"inspect", "--format", format}, containers...)...)
 	if err != nil {
 		return nil, err
 	}
 	images, imageIDs := ParseContainerImages(out)
+	for i := range images {
+		images[i].Dir = DirKey(h, images[i].Dir)
+	}
 	if len(imageIDs) == 0 {
 		return images, nil
 	}
 	// an image removed since the container was created makes docker exit
 	// with an error, but it still prints the others
-	digests, _ := dockerOutput(ctx, append([]string{"image", "inspect", "--format", `{{.Id}}{{"\t"}}{{json .RepoDigests}}`}, imageIDs...)...)
+	digests, _ := dockerOutput(ctx, h, append([]string{"image", "inspect", "--format", `{{.Id}}{{"\t"}}{{json .RepoDigests}}`}, imageIDs...)...)
 	byID := ParseRepoDigests(digests)
 	for i := range images {
 		images[i].Digests = byID[images[i].ImageID]
@@ -415,13 +461,13 @@ func ParseRepoDigests(out []byte) map[string][]string {
 	return res
 }
 
-func dockerOutput(ctx context.Context, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "docker", args...)
+func dockerOutput(ctx context.Context, h *remote.Host, args ...string) ([]byte, error) {
+	cmd := Docker(ctx, h, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return out, wrap(err, stderr.Bytes())
+		return out, wrapOn(h, err, stderr.Bytes())
 	}
 	return out, nil
 }
@@ -438,7 +484,7 @@ type OldImage struct {
 // OldImages lists the untagged images that no container, running or not,
 // uses.
 func OldImages(ctx context.Context) ([]OldImage, error) {
-	out, err := dockerOutput(ctx, "image", "ls", "-q", "--no-trunc", "--filter", "dangling=true")
+	out, err := dockerOutput(ctx, nil, "image", "ls", "-q", "--no-trunc", "--filter", "dangling=true")
 	if err != nil {
 		return nil, err
 	}
@@ -447,20 +493,20 @@ func OldImages(ctx context.Context) ([]OldImage, error) {
 		return nil, nil
 	}
 	used := map[string]bool{}
-	out, err = dockerOutput(ctx, "ps", "-aq", "--no-trunc")
+	out, err = dockerOutput(ctx, nil, "ps", "-aq", "--no-trunc")
 	if err != nil {
 		return nil, err
 	}
 	if containers := strings.Fields(string(out)); len(containers) > 0 {
 		// a container removed meanwhile makes docker exit with an error,
 		// but it still prints the others
-		out, _ = dockerOutput(ctx, append([]string{"inspect", "--format", "{{.Image}}"}, containers...)...)
+		out, _ = dockerOutput(ctx, nil, append([]string{"inspect", "--format", "{{.Image}}"}, containers...)...)
 		for _, id := range strings.Fields(string(out)) {
 			used[id] = true
 		}
 	}
 	format := `{{.Id}}{{"\t"}}{{json .RepoDigests}}{{"\t"}}{{.Size}}{{"\t"}}{{.Created}}`
-	out, _ = dockerOutput(ctx, append([]string{"image", "inspect", "--format", format}, ids...)...)
+	out, _ = dockerOutput(ctx, nil, append([]string{"image", "inspect", "--format", format}, ids...)...)
 	return ParseOldImages(out, used), nil
 }
 

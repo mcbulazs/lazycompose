@@ -13,12 +13,15 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/term"
 	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/discover"
 	"github.com/mcbulazs/lazycompose/internal/history"
+	"github.com/mcbulazs/lazycompose/internal/remote"
 	"github.com/mcbulazs/lazycompose/internal/selfupdate"
 	"github.com/mcbulazs/lazycompose/internal/stackfs"
 	"github.com/mcbulazs/lazycompose/internal/ui"
@@ -108,14 +111,15 @@ const defaultConfig = `# lazycompose config
 roots:
   - "~"
 #  - /srv/stacks
+#  - ssh://user@server/srv/stacks   # over ssh, see the wiki on remote roots
 
 # How many folders deep to look under each root. 0 means no limit.
 # Hidden folders, node_modules, vendor, testdata and the Go module cache are
 # always skipped, and folders inside an environment are not scanned.
 max_depth: 0
 
-# Editor for the e key. It can include arguments; graphical editors need a
-# flag that waits until the file is closed, like "code --wait".
+# Editor for the e key. It can include arguments. Graphical editors like
+# "code" can stay open: every save is checked and offered to apply.
 # Set it to "" to use $VISUAL, then $EDITOR, then nvim or vi (or notepad on
 # Windows, where it is "" to begin with).
 editor: vim
@@ -436,14 +440,27 @@ func main() {
 		fmt.Fprintln(os.Stderr, "lazycompose:", err)
 		os.Exit(1)
 	}
+	local := false
 	for i, r := range cfg.Roots {
+		if remote.IsRemote(r) {
+			continue
+		}
 		cfg.Roots[i] = expandHome(r)
+		local = true
 	}
 
-	find := func() ([]discover.Env, error) { return discover.Find(cfg.Roots, cfg.MaxDepth) }
+	find := func(roots []string) ([]discover.Env, error) { return discover.FindRoots(roots, cfg.MaxDepth) }
 	// check the roots up front so a typo gets a clear message; the scan
-	// itself runs in the background once the UI is up
+	// itself runs in the background once the UI is up, where a remote
+	// root that cannot be reached does not stop the others
 	for _, r := range cfg.Roots {
+		if remote.IsRemote(r) {
+			if _, _, err := remote.Parse(r); err != nil {
+				fmt.Fprintln(os.Stderr, "lazycompose:", err)
+				os.Exit(1)
+			}
+			continue
+		}
 		if _, err := os.Stat(r); err != nil {
 			fmt.Fprintln(os.Stderr, "lazycompose:", err)
 			if errors.Is(err, fs.ErrNotExist) && *configPath != "" {
@@ -452,11 +469,20 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	if err := compose.Check(context.Background()); err != nil {
-		fmt.Fprintln(os.Stderr, "lazycompose:", err)
-		os.Exit(1)
+	// with only remote roots, docker does not have to be installed here
+	if local {
+		if err := compose.Check(context.Background()); err != nil {
+			fmt.Fprintln(os.Stderr, "lazycompose:", err)
+			os.Exit(1)
+		}
+	}
+	if p := history.DefaultPath(); p != "" {
+		// next to the history; the folder is made private when first used
+		remote.ControlDir = filepath.Join(filepath.Dir(p), "ssh")
 	}
 
+	ui.RemoveLeftovers()
+	loginRemotes(cfg.Roots)
 	every, _ := updateEvery(*cfg.Updates) // checked when loading the config
 	var latestVersion func(context.Context) (string, error)
 	if *cfg.Version {
@@ -499,6 +525,56 @@ func main() {
 		if err := os.WriteFile(*cdFile, []byte(fm.QuitDir()), 0o600); err != nil {
 			fmt.Fprintln(os.Stderr, "lazycompose:", err)
 			os.Exit(1)
+		}
+	}
+}
+
+// loginRemotes logs in to the host of a single remote root before the
+// screen opens: ssh asks in the terminal for a key's passphrase, or whether
+// to trust a new host key, and keeps the connection open for lazycompose.
+// With several roots a remote one starts closed, and its host is logged in
+// to when it is opened. A host that cannot be reached is left to the
+// screen.
+func loginRemotes(roots []string) {
+	if len(roots) != 1 {
+		return
+	}
+	var hosts []*remote.Host
+	seen := map[string]bool{}
+	for _, r := range roots {
+		if h, _, err := remote.Parse(r); err == nil && !seen[h.String()] {
+			seen[h.String()] = true
+			hosts = append(hosts, h)
+		}
+	}
+	if len(hosts) == 0 || !term.IsTerminal(os.Stdin.Fd()) {
+		return
+	}
+	need := make([]bool, len(hosts))
+	var wg sync.WaitGroup
+	for i, h := range hosts {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			need[i], _ = h.NeedsLogin(ctx)
+		}()
+	}
+	wg.Wait()
+	for i, h := range hosts {
+		if !need[i] {
+			continue
+		}
+		if !remote.CanLogin() {
+			fmt.Fprintf(os.Stderr, "lazycompose: %s needs a key passphrase or a password; add the key to ssh-agent with ssh-add first\n", h.Label())
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "lazycompose: logging in to %s\n", h.Label())
+		cmd := h.LoginCommand()
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "lazycompose: could not log in to %s, its stacks show the error\n", h.Label())
 		}
 	}
 }

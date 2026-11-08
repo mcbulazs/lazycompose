@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -20,13 +21,15 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mcbulazs/lazycompose/internal/compose"
 	"github.com/mcbulazs/lazycompose/internal/discover"
+	"github.com/mcbulazs/lazycompose/internal/remote"
 )
 
 type (
 	tickMsg   struct{}
 	statesMsg struct {
 		states map[string]*compose.DirState
-		err    error
+		// errs are the hosts that could not be read, by hostKey
+		errs map[string]error
 	}
 	servicesMsg struct{ services map[string][]string }
 	psMsg       struct {
@@ -35,21 +38,20 @@ type (
 		err        error
 	}
 	envsMsg struct {
-		envs []discover.Env
-		err  error
-	}
-	editorMsg struct {
-		env    discover.Env
-		file   string
-		before [32]byte
-		err    error
+		envs  []discover.Env
+		roots []string // the roots that were scanned
+		err   error
 	}
 	configEditedMsg struct {
 		changed bool
+		quick   bool // the editor returned at once, its window has the file
 		err     error
 	}
-	logsEditedMsg struct{ err error }
-	validateMsg   struct {
+	logsEditedMsg struct {
+		file string // left for the editor window when it returned quickly
+		err  error
+	}
+	validateMsg struct {
 		env discover.Env
 		err error
 	}
@@ -63,19 +65,66 @@ type (
 )
 
 func project(e discover.Env) compose.Project {
-	return compose.Project{Dir: e.Dir, File: e.File}
+	return compose.Project{Dir: e.Folder(), File: e.File, Host: e.Host}
+}
+
+// hostsOf lists the machines the roots are on: nil for this one, when a
+// root is a local folder or there are no roots, then each remote host once.
+func hostsOf(roots []string) []*remote.Host {
+	var hosts []*remote.Host
+	local := len(roots) == 0
+	seen := map[string]bool{}
+	for _, r := range roots {
+		if !remote.IsRemote(r) {
+			local = true
+			continue
+		}
+		h, _, err := remote.Parse(r)
+		if err != nil || seen[h.String()] {
+			continue
+		}
+		seen[h.String()] = true
+		hosts = append(hosts, h)
+	}
+	if local {
+		hosts = append([]*remote.Host{nil}, hosts...)
+	}
+	return hosts
 }
 
 func tick(every time.Duration) tea.Cmd {
 	return tea.Tick(every, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
-func loadStates() tea.Cmd {
+// loadStates reads the containers of every host at the same time.
+func loadStates(hosts []*remote.Host) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		st, err := compose.StateByDir(ctx)
-		return statesMsg{states: st, err: err}
+		msg := statesMsg{states: map[string]*compose.DirState{}, errs: map[string]error{}}
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		for _, h := range hosts {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				st, err := compose.StateByDir(ctx, h)
+				mu.Lock()
+				defer mu.Unlock()
+				if err != nil {
+					if h != nil && !strings.HasPrefix(err.Error(), h.Label()+": ") {
+						err = fmt.Errorf("%s: %w", h.Label(), err)
+					}
+					msg.errs[hostKey(h)] = err
+					return
+				}
+				for dir, s := range st {
+					msg.states[dir] = s
+				}
+			}()
+		}
+		wg.Wait()
+		return msg
 	}
 }
 
@@ -117,10 +166,11 @@ func loadPS(e discover.Env) tea.Cmd {
 	}
 }
 
-func rediscover(find func() ([]discover.Env, error)) tea.Cmd {
+// rediscover scans roots; the environments of other roots stay.
+func rediscover(find func(roots []string) ([]discover.Env, error), roots []string) tea.Cmd {
 	return func() tea.Msg {
-		envs, err := find()
-		return envsMsg{envs: envs, err: err}
+		envs, err := find(roots)
+		return envsMsg{envs: envs, roots: roots, err: err}
 	}
 }
 
@@ -161,37 +211,30 @@ func editorCommand(editor, file string) (*exec.Cmd, error) {
 	return nil, errors.New("no editor found, set editor in the config or $EDITOR")
 }
 
-// openEditor edits a file of the environment: its compose file or env file.
-func openEditor(editor string, e discover.Env, file string) tea.Cmd {
-	cmd, err := editorCommand(editor, file)
-	if err != nil {
-		return func() tea.Msg { return editorMsg{env: e, file: file, err: err} }
-	}
-	before := hashFile(file)
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return editorMsg{env: e, file: file, before: before, err: err}
-	})
-}
-
 // openConfigEditor edits the lazycompose config file.
 func openConfigEditor(editor, file string) tea.Cmd {
 	cmd, err := editorCommand(editor, file)
 	if err != nil {
 		return func() tea.Msg { return configEditedMsg{err: err} }
 	}
-	before := hashFile(file)
+	before, start := hashFile(file), time.Now()
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return configEditedMsg{changed: hashFile(file) != before, err: err}
+		return configEditedMsg{changed: hashFile(file) != before, quick: time.Since(start) < quickEditor, err: err}
 	})
 }
 
-// logsFilePattern names the temporary file the log pane is written to.
-const logsFilePattern = "lazycompose-logs-*.log"
+// logsFilePrefix starts the temporary files the log pane is written to;
+// the process id follows. logsFilePattern is how they are shown.
+const (
+	logsFilePrefix  = "lazycompose-logs-"
+	logsFilePattern = logsFilePrefix + "*.log"
+)
 
 // openLogsEditor writes the log pane's lines, without colours, to a
 // temporary file only the user can read and opens it in the editor, where
 // the text can be searched and copied. The file is removed when the editor
-// exits.
+// exits; an editor that returns at once has a window that still shows it,
+// so then it is removed when lazycompose quits.
 func openLogsEditor(editor string, lines []string) tea.Cmd {
 	name, err := writeLogsFile(lines)
 	var cmd *exec.Cmd
@@ -204,7 +247,11 @@ func openLogsEditor(editor string, lines []string) tea.Cmd {
 	if err != nil {
 		return func() tea.Msg { return logsEditedMsg{err: err} }
 	}
+	start := time.Now()
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		if err == nil && time.Since(start) < quickEditor {
+			return logsEditedMsg{file: name}
+		}
 		_ = os.Remove(name)
 		return logsEditedMsg{err: err}
 	})
@@ -213,7 +260,7 @@ func openLogsEditor(editor string, lines []string) tea.Cmd {
 // writeLogsFile writes lines without their colours to a new temporary file
 // and returns its name.
 func writeLogsFile(lines []string) (string, error) {
-	f, err := os.CreateTemp("", logsFilePattern)
+	f, err := os.CreateTemp("", fmt.Sprintf("%s%d-*.log", logsFilePrefix, os.Getpid()))
 	if err != nil {
 		return "", err
 	}
@@ -234,7 +281,12 @@ func writeLogsFile(lines []string) (string, error) {
 }
 
 // envFile is the file docker compose reads variables from by default.
-func envFile(e discover.Env) string { return filepath.Join(e.Dir, ".env") }
+func envFile(e discover.Env) string {
+	if e.Remote() {
+		return path.Join(e.Path, ".env") // a path on the host
+	}
+	return filepath.Join(e.Dir, ".env")
+}
 
 // shells are tried in this order
 var shells = []string{"bash", "sh"}
@@ -259,7 +311,7 @@ func findShell(e discover.Env, service string) tea.Cmd {
 }
 
 func openShell(e discover.Env, service, shell string) tea.Cmd {
-	cmd := project(e).Command(context.Background(), "exec", service, shell)
+	cmd := project(e).Terminal("exec", service, shell)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return shellMsg{err: err} })
 }
 
@@ -424,7 +476,11 @@ func openFolder(e discover.Env) tea.Cmd {
 		return openFolderShell(e)
 	}
 	return func() tea.Msg {
-		out, err := tmuxNewWindow(e.Dir, e.Name()).CombinedOutput()
+		cmd := tmuxNewWindow(e.Dir, e.Name())
+		if e.Remote() {
+			cmd = tmuxRemoteWindow(e)
+		}
+		out, err := cmd.CombinedOutput()
 		if err != nil && len(out) > 0 {
 			err = errors.New(strings.TrimSpace(string(out)))
 		}
@@ -452,10 +508,27 @@ func userShell() string {
 	return "cmd"
 }
 
-// openFolderShell starts the user's shell in the environment's folder.
+// remoteFolderShell is the login shell on the host, started in the
+// environment's folder. The folder goes to sh as an argument, not into the
+// script.
+func remoteFolderShell(e discover.Env) []string {
+	return []string{"sh", "-c", `cd -- "$1" && exec "${SHELL:-sh}" -l`, "sh", e.Path}
+}
+
+// tmuxRemoteWindow opens a tmux window here with the shell on the host.
+func tmuxRemoteWindow(e discover.Env) *exec.Cmd {
+	args := append([]string{"new-window", "-n", e.Name(), "ssh"}, e.Host.TerminalArgs(remoteFolderShell(e)...)...)
+	return exec.Command("tmux", args...)
+}
+
+// openFolderShell starts the user's shell in the environment's folder, or
+// the login shell on the host for a remote one.
 func openFolderShell(e discover.Env) tea.Cmd {
 	cmd := exec.Command(userShell())
 	cmd.Dir = e.Dir
+	if e.Remote() {
+		cmd = e.Host.TerminalCommand(remoteFolderShell(e)...)
+	}
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		// a non-zero exit just means the last command failed
 		var exitErr *exec.ExitError
@@ -477,11 +550,12 @@ type (
 	statsTickMsg struct{ dir string }
 )
 
-func loadStats(dir string, names []string) tea.Cmd {
+func loadStats(e discover.Env, names []string) tea.Cmd {
+	dir := e.Dir
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		st, err := compose.ContainerStats(ctx, names)
+		st, err := compose.ContainerStats(ctx, e.Host, names)
 		return statsMsg{dir: dir, stats: st, err: err}
 	}
 }

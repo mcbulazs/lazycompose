@@ -3,10 +3,11 @@ package ui
 import (
 	"bufio"
 	"context"
-	"os/exec"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mcbulazs/lazycompose/internal/compose"
+	"github.com/mcbulazs/lazycompose/internal/remote"
 )
 
 const (
@@ -16,15 +17,18 @@ const (
 	eventsSettle    = 300 * time.Millisecond
 )
 
-// eventStream follows `docker events` for compose containers so the UI can
-// refresh as soon as something changes instead of waiting for the next poll.
+// eventStream follows `docker events` for compose containers on one host so
+// the UI can refresh as soon as something changes instead of waiting for the
+// next poll.
 type eventStream struct {
+	host   string // hostKey of the host
 	cancel context.CancelFunc
 	events chan struct{}
 }
 
 type (
 	eventsStartedMsg struct {
+		host   string
 		stream *eventStream
 		err    error
 	}
@@ -32,10 +36,19 @@ type (
 	eventsEndMsg   struct{ stream *eventStream }
 )
 
-func startEvents() tea.Cmd {
+// hostKey names a host in maps: "" for this machine.
+func hostKey(h *remote.Host) string {
+	if h == nil {
+		return ""
+	}
+	return h.String()
+}
+
+func startEvents(h *remote.Host) tea.Cmd {
+	key := hostKey(h)
 	return func() tea.Msg {
 		ctx, cancel := context.WithCancel(context.Background())
-		cmd := exec.CommandContext(ctx, "docker", "events",
+		cmd := compose.Docker(ctx, h, "events",
 			"--filter", "type=container",
 			"--filter", "label=com.docker.compose.project",
 			"--format", "{{.Action}}")
@@ -45,10 +58,10 @@ func startEvents() tea.Cmd {
 		}
 		if err != nil {
 			cancel()
-			return eventsStartedMsg{err: err}
+			return eventsStartedMsg{host: key, err: err}
 		}
 
-		s := &eventStream{cancel: cancel, events: make(chan struct{}, 1)}
+		s := &eventStream{host: key, cancel: cancel, events: make(chan struct{}, 1)}
 		go func() {
 			defer close(s.events)
 			sc := bufio.NewScanner(out)
@@ -60,7 +73,7 @@ func startEvents() tea.Cmd {
 			}
 			_ = cmd.Wait()
 		}()
-		return eventsStartedMsg{stream: s}
+		return eventsStartedMsg{host: key, stream: s}
 	}
 }
 
@@ -88,5 +101,36 @@ func (s *eventStream) next() tea.Cmd {
 func (s *eventStream) stop() {
 	if s != nil {
 		s.cancel()
+	}
+}
+
+// startAllEvents starts the event streams of the hosts that have none, if
+// the last try was long enough ago or force is set.
+func (m *Model) startAllEvents(force bool) tea.Cmd {
+	var cmds []tea.Cmd
+	for _, h := range m.hosts {
+		k := hostKey(h)
+		if m.events[k] != nil || m.eventsStarting[k] || !force && time.Since(m.eventsTried[k]) <= retryEvents {
+			continue
+		}
+		m.eventsStarting[k] = true
+		cmds = append(cmds, startEvents(h))
+	}
+	return tea.Batch(cmds...)
+}
+
+// allEvents reports whether every host has an event stream.
+func (m Model) allEvents() bool {
+	for _, h := range m.hosts {
+		if m.events[hostKey(h)] == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *Model) stopEvents() {
+	for _, s := range m.events {
+		s.stop()
 	}
 }

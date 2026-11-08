@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeSSH puts an ssh in PATH that runs the remote command here, so the
@@ -121,5 +122,51 @@ func TestLoginArgs(t *testing.T) {
 	}
 	if batch := h.SSHArgs("true"); !slices.Contains(batch, "BatchMode=yes") || !slices.Contains(batch, "ControlMaster=auto") {
 		t.Errorf("other commands never ask and join it: %q", batch)
+	}
+}
+
+func TestHold(t *testing.T) {
+	h := &Host{Name: "hold-test"}
+	ctx := context.Background()
+	var releases []func()
+	for range shortSessions {
+		r, err := h.Hold(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		releases = append(releases, r)
+	}
+	// all taken: the next one waits until one comes back
+	short, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if _, err := h.Hold(short); err == nil {
+		t.Fatal("a host should not get more than shortSessions at once")
+	}
+	releases[0]()
+	releases[0]() // giving back twice is harmless
+	if r, err := h.Hold(ctx); err != nil {
+		t.Errorf("a freed session should be taken: %v", err)
+	} else {
+		r()
+	}
+	// other hosts and this machine have their own
+	if r, err := (&Host{Name: "other"}).Hold(ctx); err != nil {
+		t.Errorf("another host: %v", err)
+	} else {
+		r()
+	}
+	var local *Host
+	if r, err := local.Hold(ctx); err != nil {
+		t.Errorf("this machine has no limit: %v", err)
+	} else {
+		r()
+	}
+}
+
+func TestExplainRefusedSession(t *testing.T) {
+	out := "mux_client_request_session: session request failed: Session open refused by peer\nroot@h: Permission denied (publickey).\n"
+	err := Explain(&Host{Name: "h"}, errors.New(out))
+	if !strings.Contains(err.Error(), "MaxSessions") || !errors.Is(err, ErrSessionRefused) {
+		t.Errorf("a refused session should name MaxSessions, got %q", err)
 	}
 }

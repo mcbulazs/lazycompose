@@ -243,6 +243,10 @@ func Quote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// ErrSessionRefused is a command the server would not run on the shared
+// connection, as it had too many sessions already.
+var ErrSessionRefused = errors.New("the server refused another session on the shared ssh connection")
+
 // Explain turns ssh's own error into advice when it is a common one.
 func Explain(h *Host, err error) error {
 	if err == nil {
@@ -251,12 +255,15 @@ func Explain(h *Host, err error) error {
 	msg := err.Error()
 	low := strings.ToLower(msg)
 	switch {
+	case strings.Contains(low, "session open refused"):
+		// a full shared connection, after which ssh's own login failed
+		return fmt.Errorf("%s: %w; raise MaxSessions in its sshd_config (10 is the default, lazycompose needs about 8)", h.Label(), ErrSessionRefused)
 	case strings.Contains(low, "remote host identification has changed"):
 		return fmt.Errorf("%s: its host key changed since the last login, so ssh refuses it; if you expect that, like after a reinstall, remove the old key with ssh-keygen -R %s", h.Label(), h.Name)
 	case strings.Contains(low, "host key verification failed"):
 		return fmt.Errorf("%s: the host key is not known yet; run ssh %s once to check and trust it", h.Label(), h.Name)
 	case strings.Contains(low, "permission denied"):
-		return fmt.Errorf("%s: ssh login failed; lazycompose needs a key or ssh-agent, it cannot ask for a password", h.Label())
+		return fmt.Errorf("%s: ssh login failed (permission denied); check the user, the key or the password", h.Label())
 	case strings.Contains(low, "signal: killed"):
 		return fmt.Errorf("%s: no answer in time; check that it is on and reachable", h.Label())
 	case strings.Contains(low, "executable file not found"):

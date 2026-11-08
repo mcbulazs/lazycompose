@@ -89,6 +89,11 @@ func FindRemote(ctx context.Context, root string, maxDepth int) ([]Env, error) {
 	}
 	args = append(args, ")", "-print0")
 
+	release, err := h.Hold(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	cmd := h.Command(ctx, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

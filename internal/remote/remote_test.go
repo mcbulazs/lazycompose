@@ -130,7 +130,7 @@ func TestExplain(t *testing.T) {
 	h := &Host{Name: "server"}
 	for in, want := range map[string]string{
 		"Host key verification failed.":                   "run ssh server once",
-		"me@server: Permission denied (publickey).":       "needs a key or ssh-agent",
+		"me@server: Permission denied (publickey).":       "login failed (permission denied)",
 		"ssh: connect to host server: No route":           "server: ssh: connect to host",
 		"signal: killed":                                  "no answer in time",
 		`exec: "ssh": executable file not found in $PATH`: "OpenSSH client",

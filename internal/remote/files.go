@@ -18,6 +18,11 @@ var ErrTooBig = errors.New("the file is too big")
 // limit bytes come over. A file that does not exist is not an error: exists
 // is false. A bigger file gives its first limit bytes and ErrTooBig.
 func (h *Host) ReadFile(ctx context.Context, p string, limit int) (data []byte, exists bool, err error) {
+	release, err := h.Hold(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer release()
 	cmd := h.Command(ctx, "head", "-c", strconv.Itoa(limit+1), "--", p)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -55,6 +60,11 @@ func (h *Host) WriteFile(ctx context.Context, p string, data []byte, mode string
 func (h *Host) Run(ctx context.Context, args ...string) error { return h.run(ctx, nil, args...) }
 
 func (h *Host) run(ctx context.Context, stdin io.Reader, args ...string) error {
+	release, err := h.Hold(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	cmd := h.Command(ctx, args...)
 	cmd.Stdin = stdin
 	cmd.Stdout = io.Discard
@@ -68,11 +78,16 @@ func (h *Host) run(ctx context.Context, stdin io.Reader, args ...string) error {
 
 // Exists reports whether p is on the host, as a file, folder or link.
 func (h *Host) Exists(ctx context.Context, p string) (bool, error) {
+	release, err := h.Hold(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	cmd := h.Command(ctx, "ls", "-d", "--", p)
 	cmd.Stdout = io.Discard
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	switch {
 	case err == nil:
 		return true, nil
@@ -84,6 +99,11 @@ func (h *Host) Exists(ctx context.Context, p string) (bool, error) {
 
 // RealPath resolves the links in p, which must exist, with readlink -f.
 func (h *Host) RealPath(ctx context.Context, p string) (string, error) {
+	release, err := h.Hold(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	cmd := h.Command(ctx, "readlink", "-f", "--", p)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

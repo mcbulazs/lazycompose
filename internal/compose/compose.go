@@ -60,12 +60,22 @@ func Docker(ctx context.Context, h *remote.Host, args ...string) *exec.Cmd {
 
 // Run runs a command and returns its combined output.
 func (p Project) Run(ctx context.Context, args ...string) (string, error) {
+	release, err := p.Host.Hold(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	out, err := p.Command(ctx, args...).CombinedOutput()
 	return string(out), wrapOn(p.Host, err, out)
 }
 
 // PS returns all containers of the project, including stopped ones.
 func (p Project) PS(ctx context.Context) ([]Container, error) {
+	release, err := p.Host.Hold(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	cmd := p.Command(ctx, "ps", "-a", "--format", "json")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -78,6 +88,11 @@ func (p Project) PS(ctx context.Context) ([]Container, error) {
 
 // Services lists the service names defined in the compose file.
 func (p Project) Services(ctx context.Context) ([]string, error) {
+	release, err := p.Host.Hold(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	cmd := p.Command(ctx, "config", "--services")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -462,6 +477,11 @@ func ParseRepoDigests(out []byte) map[string][]string {
 }
 
 func dockerOutput(ctx context.Context, h *remote.Host, args ...string) ([]byte, error) {
+	release, err := h.Hold(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	cmd := Docker(ctx, h, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

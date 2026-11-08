@@ -100,7 +100,7 @@ func TestOpenClose(t *testing.T) {
 	if got := rowsOf(m.list); got != "▾b,app,▾a,plex,▸web" {
 		t.Errorf("rows %s", got)
 	}
-	m.list.selectKey(groupKey("/a", "web"))
+	m.list.selectKey(groupKey(rootKey("/a"), "web"))
 	m = send(m, press("right")...)
 	if r, _ := m.list.selectedHeading(); rowsOf(m.list) != "▾b,app,▾a,plex,▾web,blog,shop" || r.label != "web" {
 		t.Errorf("rows %s, selected %+v", rowsOf(m.list), r)
@@ -254,7 +254,7 @@ func TestFolderTree(t *testing.T) {
 	m = send(m, servicesMsg{services: map[string][]string{"/srv/infra/monitoring/metrics": {"a", "b"}, "/srv/infra/traefik": {"t"}}},
 		statesMsg{states: map[string]*compose.DirState{"/srv/infra/monitoring/metrics": running("a", "b")}})
 	m.list.selectDir("/srv/infra/monitoring/umami")
-	m.list.selectKey(groupKey("/srv", "infra"))
+	m.list.selectKey(groupKey(rootKey("/srv"), "infra"))
 	m = send(m, press("enter")...)
 	if got := rowsOf(m.list); got != "top,▸infra,▾infra-x,old,▾media,arr" {
 		t.Errorf("rows %s", got)

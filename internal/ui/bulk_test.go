@@ -22,7 +22,7 @@ func TestHeadingActions(t *testing.T) {
 	m = send(m,
 		servicesMsg{services: map[string][]string{"/srv/web/blog": {"web"}, "/srv/web/shop": {"web"}}},
 		statesMsg{states: map[string]*compose.DirState{"/srv/web/blog": running("web")}})
-	m.list.selectKey(groupKey("/srv", "web"))
+	m.list.selectKey(groupKey(rootKey("/srv"), "web"))
 
 	// u starts every stack in the folder, after asking
 	m = send(m, press("u")...)
@@ -44,7 +44,7 @@ func TestHeadingActions(t *testing.T) {
 	m = send(m, press("esc")...)
 
 	// d and r leave out the stacks that have no containers
-	m.list.selectKey(groupKey("/srv", "web"))
+	m.list.selectKey(groupKey(rootKey("/srv"), "web"))
 	m = send(m, press("d")...)
 	if m.confirm == nil || m.confirm.prompt != "Run docker compose down on 1 stack in web/? (y/n)" {
 		t.Fatalf("prompt %+v", m.confirm)
@@ -52,14 +52,14 @@ func TestHeadingActions(t *testing.T) {
 	m = send(m, press("n")...)
 
 	// nothing with containers: nothing to ask
-	m.list.selectKey(groupKey("/srv", "games"))
+	m.list.selectKey(groupKey(rootKey("/srv"), "games"))
 	m = send(m, press("r")...)
 	if m.confirm != nil || !strings.Contains(m.status, "no stack in games/ has containers") {
 		t.Errorf("confirm %+v, status %q", m.confirm, m.status)
 	}
 
 	// U updates the running stacks under the heading only
-	m.list.selectKey(groupKey("/srv", "web"))
+	m.list.selectKey(groupKey(rootKey("/srv"), "web"))
 	m = send(m, press("U")...)
 	if m.confirm == nil || !strings.Contains(m.confirm.prompt, "Update 1 running stacks in web/") {
 		t.Fatalf("prompt %+v", m.confirm)
@@ -71,7 +71,7 @@ func TestHeadingActions(t *testing.T) {
 
 	// the menu shows what they do on the heading, and runs them
 	m.updating = nil
-	m.list.selectKey(groupKey("/srv", "web"))
+	m.list.selectKey(groupKey(rootKey("/srv"), "web"))
 	m = send(m, press(":", "restart")...)
 	for _, i := range m.menu.shown {
 		if en := m.menu.entries[i]; en.name == "restart" && (!en.run || en.short != "docker compose restart (each stack in web/)") {
@@ -86,7 +86,7 @@ func TestHeadingActions(t *testing.T) {
 
 	// other keys do nothing on a heading
 	m.updating = nil
-	m.list.selectKey(groupKey("/srv", "web"))
+	m.list.selectKey(groupKey(rootKey("/srv"), "web"))
 	m = send(m, press("e")...)
 	if m.edit != nil {
 		t.Error("e on a heading should not edit")

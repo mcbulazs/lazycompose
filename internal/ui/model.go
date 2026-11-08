@@ -1771,7 +1771,7 @@ func mergeEnvs(envs, found []discover.Env, roots []string) []discover.Env {
 	}
 	var out []discover.Env
 	for _, e := range envs {
-		if !scanned[e.Root] {
+		if !scanned[e.Root] && !scanned[rootKey(e.Root)] {
 			out = append(out, e)
 		}
 	}

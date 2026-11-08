@@ -114,6 +114,25 @@ func rootKey(r string) string {
 	return r
 }
 
+// rootFor is the configured root that an environment's Root names: the
+// same string, or the same folder made absolute, as a root written /srv is
+// D:\srv on Windows. Anything else is returned as it is.
+func (l envList) rootFor(root string) string {
+	for _, r := range l.roots {
+		if r.key == root {
+			return root
+		}
+	}
+	if k := rootKey(root); k != root {
+		for _, r := range l.roots {
+			if r.key == k {
+				return k
+			}
+		}
+	}
+	return root
+}
+
 // listRoots turns the configured roots into headings, in config order.
 func listRoots(roots []string) []listRoot {
 	var out []listRoot
@@ -150,7 +169,7 @@ func (l *envList) setEnvs(envs []discover.Env) {
 		order[r.key] = i
 	}
 	known := func(root string) int {
-		if i, ok := order[root]; ok {
+		if i, ok := order[l.rootFor(root)]; ok {
 			return i
 		}
 		// a root that is not configured, as in tests: after the others
@@ -172,7 +191,7 @@ func (l *envList) setEnvs(envs []discover.Env) {
 	// roots in config order, top level environments first, then each group
 	sort.SliceStable(rest, func(i, j int) bool {
 		a, b := rest[i], rest[j]
-		if ra, rb := order[a.env.Root], order[b.env.Root]; ra != rb {
+		if ra, rb := order[l.rootFor(a.env.Root)], order[l.rootFor(b.env.Root)]; ra != rb {
 			return ra < rb
 		}
 		if a.group != b.group {
@@ -225,7 +244,7 @@ func (l envList) matches(it envItem) bool {
 	q := strings.ToLower(l.query)
 	g := it.group
 	if l.multi && !it.quick {
-		g = l.rootLabel(it.env.Root) + "/" + g
+		g = l.rootLabel(l.rootFor(it.env.Root)) + "/" + g
 	}
 	return q == "" || strings.Contains(strings.ToLower(g+"/"+it.env.Name()), q)
 }
@@ -282,7 +301,7 @@ func (l *envList) rebuildAt(sel selection) {
 	for ri, r := range l.roots {
 		var idx []int
 		for i, it := range l.items {
-			if !it.quick && it.env.Root == r.key && l.matches(it) {
+			if !it.quick && l.rootFor(it.env.Root) == r.key && l.matches(it) {
 				idx = append(idx, i)
 			}
 		}
@@ -331,7 +350,7 @@ func (l *envList) rebuildAt(sel selection) {
 		case prev.kind == rowEnv && l.selectItem(prevEnv):
 		case prev.kind == rowEnv:
 			// a heading above it was closed: stay on the nearest one shown
-			l.selectNearest(prevEnv.env.Root, prevEnv.group)
+			l.selectNearest(l.rootFor(prevEnv.env.Root), prevEnv.group)
 		case prev.kind == rowGroup && !l.selectKey(prev.key):
 			root, folder, _ := strings.Cut(prev.key, "\x00")
 			l.selectNearest(root, folder)
@@ -559,10 +578,10 @@ func (l envList) headingOf(i int) (string, bool) {
 	}
 	it := l.items[r.item]
 	if it.group != "" {
-		return groupKey(it.env.Root, it.group), true
+		return groupKey(l.rootFor(it.env.Root), it.group), true
 	}
 	if l.multi {
-		return it.env.Root, true
+		return l.rootFor(it.env.Root), true
 	}
 	return "", false
 }
@@ -574,8 +593,9 @@ func (l envList) rowEnvs(r listRow) []discover.Env {
 		if it.quick {
 			continue
 		}
-		g := groupKey(it.env.Root, it.group)
-		if r.kind == rowRoot && it.env.Root == r.key || r.kind == rowGroup && (g == r.key || strings.HasPrefix(g, r.key+"/")) {
+		root := l.rootFor(it.env.Root)
+		g := groupKey(root, it.group)
+		if r.kind == rowRoot && root == r.key || r.kind == rowGroup && (g == r.key || strings.HasPrefix(g, r.key+"/")) {
 			out = append(out, it.env)
 		}
 	}

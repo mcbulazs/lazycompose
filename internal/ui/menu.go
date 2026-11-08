@@ -19,12 +19,15 @@ import (
 // The docker compose arguments of the actions, shared by the actions
 // themselves and the command shown for them in the menu.
 var (
-	upArgs       = []string{"up", "-d"}
-	downArgs     = []string{"down"}
-	restartArgs  = []string{"restart"}
-	recreateArgs = []string{"up", "-d", "--force-recreate"}
-	pullArgs     = []string{"pull"}
-	logArgs      = []string{"logs", "-f", "--tail", "200"}
+	upArgs   = []string{"up", "-d"}
+	downArgs = []string{"down"}
+	// down for one service: its containers only, as down would remove them;
+	// down SERVICE needs compose 2.20, rm works on every version
+	downServiceArgs = []string{"rm", "--stop", "--force"}
+	restartArgs     = []string{"restart"}
+	recreateArgs    = []string{"up", "-d", "--force-recreate"}
+	pullArgs        = []string{"pull"}
+	logArgs         = []string{"logs", "-f", "--tail", "200"}
 )
 
 // menuInfo describes an action in the menu: what it does and extra words
@@ -245,7 +248,9 @@ func (m Model) commandFor(name, why string) (short, full, reason string) {
 	case "logs":
 		return compose(logArgs...)
 	case "down":
-		svc = "" // down always works on the whole environment
+		if svc != "" {
+			return compose(downServiceArgs...)
+		}
 		return compose(downArgs...)
 	case "stop_start":
 		s, ok := service()

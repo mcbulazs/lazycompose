@@ -243,6 +243,43 @@ func TestDownAsksFirst(t *testing.T) {
 	}
 }
 
+func TestDownService(t *testing.T) {
+	m := newTestModel(t)
+	m = send(m,
+		servicesMsg{services: map[string][]string{"/srv/plex": {"db", "web"}}},
+		psMsg{dir: "/srv/plex"},
+	)
+	m = send(m, press("2")...)
+	if m.focus != focusServices || m.selectedService() != "db" {
+		t.Fatalf("focus %v, service %q", m.focus, m.selectedService())
+	}
+
+	// the menu shows what d runs on the service
+	m = send(m, press(":", "down")...)
+	found := false
+	for _, i := range m.menu.shown {
+		if en := m.menu.entries[i]; en.name == "down" {
+			found = true
+			if en.short != "docker compose rm --stop --force db" {
+				t.Errorf("down on a service runs %q", en.short)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("down should be in the menu")
+	}
+	m = send(m, press("esc")...)
+
+	m = send(m, press("d")...)
+	if m.confirm == nil || m.confirm.prompt != "Stop and remove the plex db container? (y/n)" {
+		t.Fatalf("expected a prompt about the service, got %+v", m.confirm)
+	}
+	m = send(m, press("y")...)
+	if m.busy != 1 || !strings.Contains(m.status, "down plex db") {
+		t.Errorf("status %q, busy %d", m.status, m.busy)
+	}
+}
+
 func TestUpdateAll(t *testing.T) {
 	m := newTestModel(t)
 	m = send(m, statesMsg{states: map[string]*compose.DirState{

@@ -1147,6 +1147,17 @@ func (m Model) envAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a := args(pullArgs...)
 		return m, m.runAction(e, "pulling "+name, "docker compose pull ("+name+")", a...)
 
+	case key.Matches(msg, keys.Stop) && svc != "":
+		a := args(downServiceArgs...)
+		target := name
+		m.confirm = &confirm{
+			prompt: fmt.Sprintf("Stop and remove the %s container? (y/n)", target),
+			onYes: func(m *Model) tea.Cmd {
+				return m.runAction(e, "down "+target, "docker compose rm --stop --force ("+target+")", a...)
+			},
+		}
+		return m, nil
+
 	case key.Matches(msg, keys.Stop):
 		m.confirm = &confirm{
 			prompt: fmt.Sprintf("Run docker compose down for %s? (y/n)", e.Rel),

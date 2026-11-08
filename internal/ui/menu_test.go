@@ -102,8 +102,8 @@ func TestMenuCommands(t *testing.T) {
 		if en.name == "restart" && !strings.HasSuffix(en.command, " restart app") {
 			t.Errorf("restart on a service runs %q", en.command)
 		}
-		if en.name == "down" && strings.HasSuffix(en.command, " app") {
-			t.Errorf("down always works on the whole environment: %q", en.command)
+		if en.name == "down" && !strings.HasSuffix(en.command, " rm --stop --force app") {
+			t.Errorf("down on a service removes only its containers: %q", en.command)
 		}
 	}
 }

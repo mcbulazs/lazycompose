@@ -96,9 +96,6 @@ type confirm struct {
 	title  string // the box's title; "" is "Are you sure?"
 	prompt string
 	onYes  func(m *Model) tea.Cmd
-	// yes is another key that answers yes, like the up key for applying
-	// with up -d; nil for none
-	yes *key.Binding
 }
 
 type Model struct {
@@ -807,19 +804,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.confirm != nil {
 		switch msg.String() {
-		case "y", "Y":
+		case "y", "Y", "enter":
+			// yes is the default, as in a shell's [Y/n]
 			c := m.confirm.onYes
 			m.confirm = nil
 			return m, c(&m)
 		case "n", "N", "esc", "q":
 			m.confirm = nil
 			m.setStatus("cancelled", false)
-		default:
-			if y := m.confirm.yes; y != nil && y.Enabled() && key.Matches(msg, *y) {
-				c := m.confirm.onYes
-				m.confirm = nil
-				return m, c(&m)
-			}
 		}
 		return m, nil
 	}
@@ -1187,8 +1179,6 @@ func (m Model) envAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			onYes: func(m *Model) tea.Cmd {
 				return m.runAction(e, "restarting "+target, "docker compose restart ("+target+")", a...)
 			},
-			// r again restarts: a stray r does nothing, a meant one costs a key
-			yes: &keys.Restart,
 		})
 		return m, asked
 
@@ -1903,7 +1893,6 @@ func (m *Model) afterEdit(e discover.Env) tea.Cmd {
 		title:  "Apply changes",
 		prompt: "docker compose config is ok for " + e.Rel + ". Run docker compose up -d to apply the changes?",
 		onYes:  apply,
-		yes:    &keys.Start, // the up key applies too, it is what the question offers
 	}
 	return nil
 }

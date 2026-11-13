@@ -13,11 +13,13 @@ func TestRestartAsks(t *testing.T) {
 	if m.confirm == nil || m.confirm.title != "Restart" || m.confirm.prompt != "Restart plex? (y/n)" {
 		t.Fatalf("r should ask first, got %+v", m.confirm)
 	}
-	if yes, _ := m.confirm.buttons(); yes != " y/r yes " {
-		t.Errorf("r again should answer yes: %q", yes)
-	}
-	// r again restarts
+	// r again does not answer
 	m = send(m, press("r")...)
+	if m.confirm == nil || len(m.actions) != 0 {
+		t.Fatalf("r again should not restart: confirm %+v, actions %d", m.confirm, len(m.actions))
+	}
+	// enter is yes
+	m = send(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.confirm != nil || len(m.actions) != 1 || !strings.Contains(m.status, "restarting plex") {
 		t.Errorf("confirm %+v, actions %d, status %q", m.confirm, len(m.actions), m.status)
 	}

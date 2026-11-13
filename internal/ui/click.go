@@ -46,15 +46,9 @@ func (m Model) footerAt(x int) (key.Binding, bool) {
 // text is the question without its "(y/n)", which the buttons replace.
 func (c *confirm) text() string { return strings.TrimSuffix(c.prompt, " (y/n)") }
 
-// buttons are the answers as shown: the yes button names the other key
-// that answers yes, like the up key for applying.
-func (c *confirm) buttons() (yes, no string) {
-	k := "y"
-	if c.yes != nil && c.yes.Enabled() {
-		k += "/" + c.yes.Help().Key
-	}
-	return " " + k + " yes ", " n no "
-}
+// buttons are the answers as shown. Yes is the default that enter gives,
+// so its key is a capital, as in a shell's [Y/n].
+func (c *confirm) buttons() (yes, no string) { return " Y yes ", " n no " }
 
 // confirmBox is the open question drawn as a box in the middle of the
 // screen, so it cannot be missed, with where it and its buttons are.

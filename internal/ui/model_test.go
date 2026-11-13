@@ -461,9 +461,6 @@ func TestEditorResult(t *testing.T) {
 	if m.confirm == nil || m.confirm.title != "Apply changes" || !strings.Contains(m.confirm.prompt, "config is ok for plex") {
 		t.Errorf("expected apply prompt, got %+v", m.confirm)
 	}
-	if yes, _ := m.confirm.buttons(); yes != " y/u yes " {
-		t.Errorf("the yes button should name u too: %q", yes)
-	}
 }
 
 func TestEditorWindow(t *testing.T) {
@@ -515,40 +512,19 @@ func TestEditorWindow(t *testing.T) {
 	}
 }
 
-// u, the up key, also answers yes to applying an edit, since that runs up
-func TestApplyWithUpKey(t *testing.T) {
-	resetKeys(t)
+// enter answers yes, and u, the up key, no longer does
+func TestApplyWithEnter(t *testing.T) {
 	m := newTestModel(t)
 	m = send(m, validateMsg{env: env("plex")})
-	m = send(m, press("u")...)
-	if m.confirm != nil || m.status == "cancelled" || len(m.actions) == 0 {
-		t.Errorf("u should apply: confirm %+v, status %q, actions %d", m.confirm, m.status, len(m.actions))
-	}
-
-	// a remapped up key moves with it, and u no longer answers
-	if err := SetKeys(map[string][]string{"up": {"a"}}); err != nil {
-		t.Fatal(err)
-	}
-	m = newTestModel(t)
-	m = send(m, validateMsg{env: env("plex")})
-	if yes, _ := m.confirm.buttons(); yes != " y/a yes " {
-		t.Errorf("the yes button %q should offer a", yes)
-	}
-	if m = send(m, press("u")...); m.confirm == nil {
-		t.Error("u should do nothing once up is on another key")
-	}
-	if m = send(m, press("a")...); m.confirm != nil {
-		t.Error("a should apply")
-	}
-
-	// with up turned off only y applies
-	if err := SetKeys(map[string][]string{"up": {}}); err != nil {
-		t.Fatal(err)
-	}
-	m = newTestModel(t)
-	m = send(m, validateMsg{env: env("plex")})
-	if yes, _ := m.confirm.buttons(); yes != " y yes " {
+	if yes, _ := m.confirm.buttons(); yes != " Y yes " {
 		t.Errorf("yes button %q", yes)
+	}
+	if m = send(m, press("u")...); m.confirm == nil || len(m.actions) != 0 {
+		t.Error("u should not answer the question")
+	}
+	m = send(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.confirm != nil || m.status == "cancelled" || len(m.actions) == 0 {
+		t.Errorf("enter should apply: confirm %+v, status %q, actions %d", m.confirm, m.status, len(m.actions))
 	}
 }
 
